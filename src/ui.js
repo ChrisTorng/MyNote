@@ -6,7 +6,7 @@ export const HTML = String.raw`<!doctype html>
 <meta name="theme-color" content="#111a27">
 <meta name="robots" content="noindex,nofollow,noarchive">
 <meta name="referrer" content="no-referrer">
-<link rel="manifest" href="/manifest.webmanifest">
+<link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="/icon.svg" type="image/svg+xml">
 <title>MyNote · 私人筆記</title>
 <style>
 :root{color-scheme:light dark;--bg:#f7f8fa;--paper:#fff;--ink:#1c2737;--muted:#6b7582;--line:#e4e8ed;--primary:#2867a7;--tint:#edf5ff;--danger:#b43333;--shadow:0 1px 4px #15243b0a}
@@ -93,7 +93,7 @@ async function getAll(name){return req(tx([name]).objectStore(name).getAll())}
 async function setting(key){return (await req(tx(['settings']).objectStore('settings').get(key)))?.value}
 async function saveSetting(key,value){const t=tx(['settings'],'readwrite');t.objectStore('settings').put({key,value});await done(t)}
 async function api(path,method='GET',data){const res=await fetch('/api'+path,{method,credentials:'same-origin',headers:data?{'content-type':'application/json'}:{},body:data?JSON.stringify(data):undefined,cache:'no-store'});let value={};try{value=await res.json()}catch{};if(!res.ok){const e=new Error(value.error||'連線失敗');e.status=res.status;throw e}return value}
-function date(t){if(!t)return '—';return new Date(t).toLocaleString('zh-TW',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false})}
+function date(t){if(!t)return '—';return new Date(t).toLocaleString('zh-TW',{year:'2-digit',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false})}
 function lines(content){const a=content.replace(/\r/g,'').split('\n');return [a[0]||'(無標題)',a.slice(1).find(x=>x.trim())||'　']}
 function renderCategories(){
  const nav=$('categoryNav');nav.replaceChildren();
@@ -178,8 +178,9 @@ async function flush(){
    await done(t);
    remoteVersion=Math.max(remoteVersion,result.version||0);
   }
-  if(out.length){setStatus('已同步雲端');await pull(true)}
-  else if(navigator.onLine){setStatus('已同步雲端')}
+  if(out.length)await pull(true);
+  if((await getAll('outbox')).length===0)setStatus('已同步雲端');
+  else setStatus('已存本機 · 待同步')
  }catch(e){setStatus(e.status===401?'登入已過期，筆記已保存在本機':'已存本機 · 等待同步',e.status===401)}
  finally{syncing=false}
 }
@@ -189,11 +190,12 @@ async function pull(force=false){
  try{
    const data=await api('/state?version='+(force?0:remoteVersion));
    if(data.unchanged)return;
+   await persistChain;
    const pending=new Set((await getAll('outbox')).map(x=>x.id));
    categories=data.categories;
    await saveSetting('categories',categories);
    const t=tx(['notes'],'readwrite');
-   data.notes.forEach(n=>{if(!pending.has(n.id)){notes.set(n.id,n);t.objectStore('notes').put(n)}});
+   data.notes.forEach(n=>{const local=notes.get(n.id);if(!pending.has(n.id)&&!(local&&local.originDeviceId===device.deviceId&&local.revision>n.revision)){notes.set(n.id,n);t.objectStore('notes').put(n)}});
    await done(t);
    remoteVersion=data.version;
    renderCategories();renderList();
