@@ -31,7 +31,7 @@ function randomToken() {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
-const icon = JSON.stringify({ name: 'MyNote', short_name: 'MyNote', start_url: '/', display: 'standalone', background_color: '#10151d', theme_color: '#111a27', icons: [] });
+const icon = JSON.stringify({ name: 'MyNote', short_name: 'MyNote', start_url: '/', display: 'standalone', background_color: '#10151d', theme_color: '#111a27', icons: [{src:'/icon.svg',sizes:'any',type:'image/svg+xml',purpose:'any'}] });
 const sw = "const CACHE='mynote-shell-v1';self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(['/','/manifest.webmanifest'])));self.skipWaiting()});self.addEventListener('activate',e=>{e.waitUntil(self.clients.claim())});self.addEventListener('fetch',e=>{if(e.request.method!=='GET'||new URL(e.request.url).pathname.startsWith('/api/'))return;const path=new URL(e.request.url).pathname;if(e.request.mode==='navigate'||path==='/manifest.webmanifest'){e.respondWith(fetch(e.request).then(r=>{if(r.ok){const copy=r.clone();caches.open(CACHE).then(c=>c.put(e.request,copy))}return r}).catch(()=>caches.match(e.request)))}})";
 async function forward(stub, path, method = 'GET', body, headers = {}) {
   const init = { method, headers };
@@ -63,6 +63,9 @@ export default {
       }
       if (request.method === 'GET' && path === '/manifest.webmanifest') {
         return new Response(icon, { headers: { 'content-type': 'application/manifest+json' } });
+      }
+      if (request.method === 'GET' && path === '/icon.svg') {
+        return new Response('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192"><rect width="192" height="192" rx="34" fill="#173959"/><path d="M42 133V59l54 57 54-57v74" fill="none" stroke="#f3f7fc" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/></svg>', { headers: { 'content-type': 'image/svg+xml', 'cache-control':'public,max-age=86400' } });
       }
       if (request.method === 'GET' && path === '/sw.js') {
         return new Response(sw, { headers: { 'content-type': 'text/javascript', 'cache-control': 'no-cache' } });
@@ -105,6 +108,7 @@ export default {
         return json({ ok:true }, 200, { 'set-cookie': 'mynote_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0' });
       }
       if (path === '/api/stream' && request.headers.get('Upgrade')?.toLowerCase() === 'websocket') {
+        if (request.headers.get('origin') !== url.origin) return fail('Invalid origin', 403);
         return stub.fetch(new Request('https://mynote.internal/internal/stream', { headers: { Upgrade: 'websocket' } }));
       }
       let internal, method = request.method, body;
