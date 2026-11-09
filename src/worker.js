@@ -57,7 +57,7 @@ export default {
             'x-content-type-options': 'nosniff',
             'referrer-policy': 'no-referrer',
             'x-frame-options': 'DENY',
-            'content-security-policy': "default-src 'none'; script-src 'nonce-" + nonce + "'; style-src 'unsafe-inline'; connect-src 'self' wss:; img-src 'self' data:; manifest-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+            'content-security-policy': "default-src 'none'; script-src 'nonce-" + nonce + "'; style-src 'unsafe-inline'; worker-src 'self'; connect-src 'self' wss:; img-src 'self' data:; manifest-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
           }
         });
       }
