@@ -146,7 +146,7 @@ const $=id=>document.getElementById(id);
 const isDesktop=()=>window.matchMedia('(min-width:961px)').matches;
 const dayMs=86400000;
 let db=null,device=null,categories=[{id:'inbox',name:'Inbox'}],notes=new Map(),remoteVersion=0,selected='inbox',archivedView=false,editId=null,editing=false,editingDraft=false,persistChain=Promise.resolve(),syncing=false,pulling=false,socket=null,reconnectTimer,searchOpen=false,ready=false;
-let syncTimer;
+let syncTimer, resendNeeded=false;
 const WEEK=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 function status(message,error=false){$('saveStatus').textContent=message;$('saveStatus').title=message;$('saveStatus').classList.toggle('error',error);$('editorStatus').textContent=editing&&editId&&notes.get(editId)?.originDeviceId===device?.deviceId?message:'';}
 function openDB(){return new Promise((resolve,reject)=>{const r=indexedDB.open('mynote-local-v1',2);r.onupgradeneeded=()=>{const d=r.result;if(!d.objectStoreNames.contains('notes'))d.createObjectStore('notes',{keyPath:'id'});if(!d.objectStoreNames.contains('outbox'))d.createObjectStore('outbox',{keyPath:'id'});if(!d.objectStoreNames.contains('settings'))d.createObjectStore('settings',{keyPath:'key'});if(!d.objectStoreNames.contains('archiveOutbox'))d.createObjectStore('archiveOutbox',{keyPath:'id'})};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
@@ -321,8 +321,8 @@ function openEditor(id=null,focus=true){
  $('editorStatus').textContent=readOnly?'':'Autosave';
  renderList(true);
  if(!readOnly&&focus){
-  $('noteText').focus({preventScroll:true});
   if(!isDesktop()&&!id)$('newEditorHost').scrollIntoView({block:'nearest'});
+  $('noteText').focus({preventScroll:true});
  }
 }
 function updateVisibleNote(n){
@@ -376,7 +376,8 @@ function onText(){
 }
 function scheduleSync(){clearTimeout(syncTimer);syncTimer=setTimeout(flush,500)}
 async function flush(){
- if(syncing||!device||!navigator.onLine)return;
+ if(syncing){resendNeeded=true;return}
+ if(!device||!navigator.onLine)return;
  syncing=true;
  try{
   await persistChain;
@@ -408,7 +409,7 @@ async function flush(){
   const still=(await getAll('outbox')).length+(await getAll('archiveOutbox')).length;
   status(still?'Saved locally · Sync pending':'Synced');
  }catch(e){const m=e.status?'Sync '+e.status+': '+e.message:'Sync error: '+e.message;status(m,true);}
- finally{syncing=false}
+ finally{syncing=false;if(resendNeeded){resendNeeded=false;clearTimeout(syncTimer);syncTimer=setTimeout(flush,350)}}
 }
 async function pull(force=false){
  if(pulling||!device||!navigator.onLine)return;
@@ -531,15 +532,66 @@ $('renameCategory').onclick=()=>renameCategory();
 $('deleteCategory').onclick=()=>deleteCategory();
 $('searchToggle').onclick=()=>setSearchOpen(!searchOpen);
 $('searchInput').oninput=()=>{if(editing)closeEditor();renderList(true)};
-$('searchInput').addEventListener('keydown',e=>{if(e.key==='Escape')setSearchOpen(false)});
-$('activeTab').onclick=()=>{if(editing)closeEditor();archivedView=false;renderList()};
-$('archiveTab').onclick=()=>{if(editing)closeEditor();archivedView=true;renderList()};
+$('searchInput').addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();if(isDesktop()){$('searchInput').blur()}else setSearchOpen(false)}});
+$('activeTab').onclick=()=>{if(editing)closeEditor();archivedView=false;renderList(true)};
+$('archiveTab').onclick=()=>{if(editing)closeEditor();archivedView=true;renderList(true)};
 $('deviceButton').onclick=async()=>{
  if(!device)return;
  const name=prompt('Device name',device.name);if(!name?.trim()||name.trim()===device.name)return;
  try{const r=await api('/device','PATCH',{name:name.trim()});device.name=r.name;$('deviceButton').textContent=r.name;await saveSetting('device',device);await pull(true)}catch(e){alert(e.message)}
 };
 $('logoutButton').onclick=async()=>{if(!confirm('Sign out? Unsynced data stays on this device.'))return;try{await api('/logout','POST')}catch{};try{socket?.close()}catch{};device=null;showLogin()};
+function moveNote(delta,activate){
+ const heads=[...document.querySelectorAll('.note-head')];
+ if(!heads.length)return;
+ const ids=heads.map(h=>h.closest('.note')?.dataset.id);
+ let index=ids.indexOf(editId);
+ if(index<0)index=heads.findIndex(h=>h===document.activeElement);
+ const next=(index+delta+heads.length)%heads.length;
+ if(activate)openEditor(ids[next]);
+ else heads[next].focus();
+}
+document.addEventListener('keydown',e=>{
+ if(!ready||!isDesktop()||e.isComposing)return;
+ const key=e.key.toLowerCase();
+ const target=e.target;
+ const isText=target instanceof HTMLElement&&!!target.closest('input,textarea,[contenteditable="true"]');
+ if((e.ctrlKey||e.metaKey)&&!e.altKey&&key==='k'){
+  e.preventDefault();setSearchOpen(true);return;
+ }
+ if((e.ctrlKey||e.metaKey)&&!e.altKey&&key==='s'){
+  e.preventDefault();flush();return;
+ }
+ if((e.ctrlKey||e.metaKey)&&key==='enter'&&editing){
+  e.preventDefault();closeEditor();return;
+ }
+ if(e.key==='Escape'){
+  if(target===$('searchInput')){$('searchInput').blur();return}
+  if(editing){e.preventDefault();closeEditor()}return;
+ }
+ if(e.altKey&&!e.ctrlKey&&!e.metaKey){
+  let handled=true;
+  switch(key){
+   case 'n':openEditor(null);break;
+   case '1':$('activeTab').click();break;
+   case '2':$('archiveTab').click();break;
+   case 'c':addCategory();break;
+   case 'r':renameCategory();break;
+   case 'delete':deleteCategory();break;
+   case 'a':if(editId)archiveNote(editId);else handled=false;break;
+   case 'arrowdown':moveNote(1,true);break;
+   case 'arrowup':moveNote(-1,true);break;
+   default:handled=false;
+  }
+  if(handled){e.preventDefault();return}
+ }
+ if(!isText&&!e.ctrlKey&&!e.altKey&&!e.metaKey){
+  if(key==='/'||key==='f'){e.preventDefault();setSearchOpen(true)}
+  if((key==='arrowdown'||key==='arrowup')&&target.classList?.contains('note-head')){
+   e.preventDefault();moveNote(key==='arrowdown'?1:-1,false);
+  }
+ }
+});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){flush();pull(false);connectSocket()}else persistChain.then(()=>flush())});
 window.addEventListener('online',()=>{status('Connecting…');flush();pull(true);connectSocket()});
 window.addEventListener('offline',()=>status('Offline · Saved locally'));
