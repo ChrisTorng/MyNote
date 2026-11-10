@@ -41,7 +41,7 @@ async function forward(stub, path, method = 'GET', body, headers = {}) {
   }
   return stub.fetch(new Request('https://mynote.internal' + path, init));
 }
-function safeName(input) { return String(input || '').trim().slice(0, 50) || '我的裝置'; }
+function safeName(input) { return String(input || '').trim().slice(0, 50) || 'My device'; }
 
 export default {
   async fetch(request, env) {
@@ -116,6 +116,8 @@ export default {
         internal = '/internal/state?version=' + encodeURIComponent(url.searchParams.get('version') || '0');
       } else if (path === '/api/note' && method === 'PUT') {
         internal = '/internal/note'; body = { ...await request.json(), device };
+      } else if (path === '/api/archive' && method === 'PATCH') {
+        internal = '/internal/archive'; body = { ...await request.json(), device };
       } else if (path === '/api/category' && ['POST','PATCH','DELETE'].includes(method)) {
         internal = '/internal/category'; body = { ...await request.json(), device };
       } else if (path === '/api/device' && method === 'PATCH') {
@@ -129,7 +131,7 @@ export default {
       h.set('set-cookie', sessionCookie(token));
       return new Response(response.body, { status: response.status, headers: h });
     } catch (e) {
-      return fail('服務暫時無法處理請求', 500);
+      return fail('Unable to process request', 500);
     }
   }
 };
@@ -143,7 +145,8 @@ export class MyNoteStore extends DurableObject {
     sql.exec("CREATE TABLE IF NOT EXISTS notes (id TEXT PRIMARY KEY, category_id TEXT NOT NULL, content TEXT NOT NULL, origin_device_id TEXT NOT NULL, origin_device_name TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, archived_at INTEGER, revision INTEGER NOT NULL)");
     sql.exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL)");
     sql.exec("INSERT OR IGNORE INTO meta(key,value) VALUES ('version',1)");
-    sql.exec("INSERT OR IGNORE INTO categories(id,name,created_at,updated_at,sort_order) VALUES ('inbox','隨手記',0,0,0)");
+    sql.exec("INSERT OR IGNORE INTO categories(id,name,created_at,updated_at,sort_order) VALUES ('inbox','Inbox',0,0,0)");
+    sql.exec("UPDATE categories SET name='Inbox' WHERE id='inbox' AND name='隨手記'");
   }
   version() {
     return this.ctx.storage.sql.exec("SELECT value FROM meta WHERE key='version'").one().value;
@@ -214,14 +217,14 @@ export class MyNoteStore extends DurableObject {
         const id = String(body.id || '');
         const name = String(body.name || '').trim().slice(0,60);
         if (method === 'POST') {
-          if (!name || !/^[\w-]{4,80}$/.test(id)) return fail('分類資料不正確');
+          if (!name || !/^[\w-]{4,80}$/.test(id)) return fail('Invalid category');
           const now=Date.now();
           sql.exec('INSERT OR IGNORE INTO categories(id,name,created_at,updated_at,sort_order) VALUES(?,?,?,?,?)',id,name,now,now,now);
         } else if (method === 'PATCH') {
-          if (!name || id === 'inbox' && !name) return fail('請輸入分類名稱');
+          if (!name || id === 'inbox' && !name) return fail('Category name required');
           sql.exec('UPDATE categories SET name=?,updated_at=? WHERE id=?',name,Date.now(),id);
         } else if (method === 'DELETE') {
-          if (id === 'inbox') return fail('預設分類不能刪除');
+          if (id === 'inbox') return fail('Cannot delete the default category');
           this.ctx.storage.transactionSync(() => {
             sql.exec("UPDATE notes SET category_id='inbox' WHERE category_id=?",id);
             sql.exec('DELETE FROM categories WHERE id=?',id);
@@ -230,16 +233,31 @@ export class MyNoteStore extends DurableObject {
         this.changed();
         return json({ ok:true,version:this.version() });
       }
+      if (path === '/internal/archive' && method === 'PATCH') {
+        const id = String(body.id || '');
+        if (!/^[\w-]{8,80}$/.test(id) || typeof body.archived !== 'boolean') return fail('Invalid archive request');
+        const record = sql.exec('SELECT archived_at AS archivedAt FROM notes WHERE id=?', id).toArray()[0];
+        if (!record) return fail('Note not found', 404);
+        const oldArchived = record.archivedAt != null;
+        if (oldArchived === body.archived) return json({ ok:true, archivedAt:record.archivedAt, version:this.version() });
+        const archivedAt = body.archived ? Date.now() : null;
+        sql.exec('UPDATE notes SET archived_at=? WHERE id=?', archivedAt, id);
+        this.changed();
+        return json({ ok:true, archivedAt, version:this.version() });
+      }
       if (path === '/internal/note' && method === 'PUT') {
         const device = body.device;
         const id = String(body.id || '');
         const content = String(body.content ?? '');
         const revision = Number(body.revision);
         if (!/^[\w-]{8,80}$/.test(id) || content.length>200000 || !Number.isSafeInteger(revision) || revision<1)
-          return fail('筆記資料不正確');
-        const existing = sql.exec('SELECT origin_device_id AS owner, revision FROM notes WHERE id=?',id).toArray()[0];
-        if (existing && existing.owner !== device.deviceId) return fail('這筆筆記只能由建立裝置修改',403);
-        if (existing && revision <= existing.revision) return json({ ok:true,revision:existing.revision,version:this.version() });
+          return fail('Invalid note');
+        const existing = sql.exec('SELECT origin_device_id AS owner, revision, content FROM notes WHERE id=?',id).toArray()[0];
+        if (existing && existing.owner !== device.deviceId) return fail('Only the creating device may edit this note',403);
+        if (existing && revision <= existing.revision) {
+          if (revision === existing.revision && existing.content === content) return json({ ok:true,revision:existing.revision,version:this.version() });
+          return fail('Note has a newer revision; local copy was kept',409);
+        }
         const now=Date.now();
         const createdAt = Number(body.createdAt) || now;
         const updatedAt = Number(body.updatedAt) || now;
@@ -250,15 +268,15 @@ export class MyNoteStore extends DurableObject {
           sql.exec('INSERT INTO notes(id,category_id,content,origin_device_id,origin_device_name,created_at,updated_at,archived_at,revision) VALUES(?,?,?,?,?,?,?,?,?)',
             id,categoryId,content,device.deviceId,device.name,createdAt,updatedAt,archivedAt,revision);
         } else {
-          sql.exec('UPDATE notes SET category_id=?,content=?,updated_at=?,archived_at=?,revision=? WHERE id=?',
-            categoryId,content,updatedAt,archivedAt,revision,id);
+          sql.exec('UPDATE notes SET category_id=?,content=?,updated_at=MAX(updated_at,?),revision=? WHERE id=?',
+            categoryId,content,updatedAt,revision,id);
         }
         this.changed();
         return json({ ok:true,revision,version:this.version() });
       }
       return fail('Not found',404);
     } catch(e) {
-      return fail('資料庫操作失敗',500);
+      return fail('Storage error',500);
     }
   }
 }
