@@ -557,7 +557,7 @@ function moveNote(delta,activate){
  const ids=heads.map(h=>h.closest('.note')?.dataset.id);
  let index=ids.indexOf(editId);
  if(index<0)index=heads.findIndex(h=>h===document.activeElement);
- const next=(index+delta+heads.length)%heads.length;
+ const next=index<0?(delta>0?0:heads.length-1):(index+delta+heads.length)%heads.length;
  if(activate)openEditor(ids[next]);
  else heads[next].focus();
 }
