@@ -148,7 +148,7 @@ const dayMs=86400000;
 let db=null,device=null,categories=[{id:'inbox',name:'Inbox'}],notes=new Map(),remoteVersion=0,selected='inbox',archivedView=false,editId=null,editing=false,editingDraft=false,persistChain=Promise.resolve(),syncing=false,pulling=false,socket=null,reconnectTimer,searchOpen=false,ready=false;
 let syncTimer;
 const WEEK=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-function status(message,error=false){$('saveStatus').textContent=message;$('saveStatus').classList.toggle('error',error);$('editorStatus').textContent=message;}
+function status(message,error=false){$('saveStatus').textContent=message;$('saveStatus').title=message;$('saveStatus').classList.toggle('error',error);$('editorStatus').textContent=editing&&editId&&notes.get(editId)?.originDeviceId===device?.deviceId?message:'';}
 function openDB(){return new Promise((resolve,reject)=>{const r=indexedDB.open('mynote-local-v1',2);r.onupgradeneeded=()=>{const d=r.result;if(!d.objectStoreNames.contains('notes'))d.createObjectStore('notes',{keyPath:'id'});if(!d.objectStoreNames.contains('outbox'))d.createObjectStore('outbox',{keyPath:'id'});if(!d.objectStoreNames.contains('settings'))d.createObjectStore('settings',{keyPath:'key'});if(!d.objectStoreNames.contains('archiveOutbox'))d.createObjectStore('archiveOutbox',{keyPath:'id'})};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
 function req(r){return new Promise((resolve,reject)=>{r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
 function done(t){return new Promise((resolve,reject)=>{t.oncomplete=resolve;t.onerror=()=>reject(t.error);t.onabort=()=>reject(t.error||Error('Transaction aborted'))})}
@@ -407,7 +407,7 @@ async function flush(){
   if(out.length||archived.length)await pull(true);
   const still=(await getAll('outbox')).length+(await getAll('archiveOutbox')).length;
   status(still?'Saved locally · Sync pending':'Synced');
- }catch(e){status(e.status===401?'Session expired · Saved locally':e.status===409?'Version conflict · Saved locally':'Saved locally · Sync pending',e.status===401||e.status===409)}
+ }catch(e){const m=e.status?'Sync '+e.status+': '+e.message:'Sync error: '+e.message;status(m,true);}
  finally{syncing=false}
 }
 async function pull(force=false){
@@ -437,7 +437,7 @@ async function pull(force=false){
    if(n){if(n.originDeviceId!==device.deviceId){$('readOnlyFull').textContent=n.content;$('editorMeta').textContent=metaText(n)}$('archiveButton').textContent=n.archivedAt?'Restore':'Archive'}
   }
   renderList();
- }catch(e){status(e.status===401?'Session expired':'Offline',!!e.status&&e.status!==401)}
+ }catch(e){status(e.status?'Refresh '+e.status+': '+e.message:'Offline',!!e.status)}
  finally{pulling=false}
 }
 async function archiveNote(id){
@@ -451,15 +451,15 @@ async function addCategory(){
  const name=prompt('Category name');if(!name?.trim())return;
  try{await api('/category','POST',{id:crypto.randomUUID(),name:name.trim()});await pull(true)}catch(e){alert(e.message)}
 }
-async function renameCategory(){
- const c=categories.find(c=>c.id===selected);if(!c)return;
+async function renameCategory(id=selected){
+ const c=categories.find(c=>c.id===id);if(!c)return;
  const name=prompt('Rename category',c.name);if(!name?.trim()||name.trim()===c.name)return;
  try{await api('/category','PATCH',{id:c.id,name:name.trim()});await pull(true)}catch(e){alert(e.message)}
 }
-async function deleteCategory(){
- const c=categories.find(c=>c.id===selected);if(!c||c.id==='inbox')return;
+async function deleteCategory(id=selected){
+ const c=categories.find(c=>c.id===id);if(!c||c.id==='inbox')return;
  if(!confirm('Delete '+c.name+'? Notes will move to Inbox.'))return;
- try{await api('/category','DELETE',{id:c.id});selected='inbox';await pull(true)}catch(e){alert(e.message)}
+ try{await api('/category','DELETE',{id:c.id});if(selected===c.id)selected='inbox';await pull(true)}catch(e){alert(e.message)}
 }
 function connectSocket(){
  if(!device||!navigator.onLine)return;
@@ -472,6 +472,7 @@ function connectSocket(){
  }catch{}
 }
 function setSearchOpen(value){
+ if(isDesktop()){searchOpen=true;$('searchRow').classList.add('open');$('searchInput').focus();return}
  searchOpen=value;$('searchRow').classList.toggle('open',searchOpen);$('searchToggle').textContent=searchOpen?'×':'⌕';$('searchToggle').title=searchOpen?'Close search':'Search';
  if(searchOpen)$('searchInput').focus();else{$('searchInput').value='';renderList()}
 }
@@ -520,14 +521,16 @@ $('loginForm').onsubmit=async e=>{
   device=result;await saveSetting('device',result);await boot();
  }catch(e){$('loginError').textContent=e.message}finally{$('loginButton').disabled=false}
 };
-$('quickAdd').onclick=()=>{openEditor(null);if(!isDesktop())$('newEditorHost').scrollIntoView({block:'nearest',behavior:'smooth'})};
+$('quickAdd').onclick=()=>openEditor(null);
+$('desktopNew').onclick=()=>openEditor(null);
 $('noteText').addEventListener('input',onText);
 $('archiveButton').onclick=()=>{if(editId)archiveNote(editId)};
+$('archiveButton').title='Archive / restore (Alt+A)';
 $('doneButton').onclick=closeEditor;
-$('renameCategory').onclick=renameCategory;
-$('deleteCategory').onclick=deleteCategory;
+$('renameCategory').onclick=()=>renameCategory();
+$('deleteCategory').onclick=()=>deleteCategory();
 $('searchToggle').onclick=()=>setSearchOpen(!searchOpen);
-$('searchInput').oninput=renderList;
+$('searchInput').oninput=()=>{if(editing)closeEditor();renderList(true)};
 $('searchInput').addEventListener('keydown',e=>{if(e.key==='Escape')setSearchOpen(false)});
 $('activeTab').onclick=()=>{if(editing)closeEditor();archivedView=false;renderList()};
 $('archiveTab').onclick=()=>{if(editing)closeEditor();archivedView=true;renderList()};
