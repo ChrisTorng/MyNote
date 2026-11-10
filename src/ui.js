@@ -77,7 +77,7 @@ export const HTML = String.raw`<!doctype html>
 <div id="noteList" class="notes"></div>
 </section>
 <div id="splitRight" class="splitter" title="Drag to resize"></div>
-<aside id="detail" class="detail"><div id="desktopEditorHost" class="desktop-editor-host"></div><div id="detailEmpty" class="detail-empty">Select a note or add a new one.</div></aside>
+<aside id="detail" class="detail"><div id="desktopEditorHost" class="desktop-editor-host"></div><div id="detailEmpty" class="detail-empty"></div></aside>
 </main>
 <div id="expandedEditor" class="editor hidden">
 <div class="editor-top"><span id="editorMeta"></span><span id="editorType"></span></div>
@@ -117,7 +117,8 @@ function metaText(n){let s='Created '+stamp(n.createdAt);if(!sameMinute(n.create
 function dateTokens(ts){
  if(!ts)return '';
  const d=new Date(ts),y=d.getFullYear(),m=d.getMonth()+1,day=d.getDate(),w=WEEK[d.getDay()];
- return [stamp(ts),y+'/'+m+'/'+day,y+'-'+String(m).padStart(2,'0')+'-'+String(day).padStart(2,'0'),m+'/'+day,m+'-'+day,m+'.'+day,y+'年'+m+'月'+day+'日',w,d.getHours()+':'+d.getMinutes()].join(' ').toLowerCase();
+ const mm=String(m).padStart(2,'0'),dd=String(day).padStart(2,'0');
+ return [stamp(ts),y+'/'+m+'/'+day,y+'/'+mm+'/'+dd,y+'-'+mm+'-'+dd,m+'/'+day,mm+'/'+dd,m+'/'+dd,mm+'/'+day,m+'-'+day,m+'.'+day,y+'年'+m+'月'+day+'日',w,d.getHours()+':'+d.getMinutes()].join(' ').toLowerCase();
 }
 function searchMatches(n,q){if(!q)return true;return (n.content+' '+n.originDeviceName+' '+dateTokens(n.createdAt)+' '+dateTokens(n.updatedAt)).toLowerCase().includes(q)}
 function firstLines(value){const a=String(value||'').replace(/\r/g,'').split('\n');return [a[0]||'(Untitled)',a.slice(1).find(x=>x.trim())||' ']}
@@ -132,7 +133,7 @@ function renderCategories(){
  const b=document.createElement('button');b.className='chip'+(c.id===selected?' selected':'');b.title=c.name;
  const name=document.createElement('span');name.className='name';name.textContent=c.name;
  const count=document.createElement('span');count.className='chip-count';count.textContent=[...notes.values()].filter(n=>n.categoryId===c.id&&!n.archivedAt).length;
- b.append(name,count);b.onclick=()=>{selected=c.id;renderCategories();renderList()};nav.append(b);
+ b.append(name,count);b.onclick=()=>{if(editing)closeEditor();selected=c.id;renderCategories();renderList()};nav.append(b);
  });
  const plus=document.createElement('button');plus.className='chip add';plus.textContent='+';plus.title='Add category';plus.setAttribute('aria-label','Add category');plus.onclick=addCategory;nav.append(plus);
  $('deleteCategory').disabled=selected==='inbox';$('renameCategory').disabled=!categories.some(c=>c.id===selected);
@@ -177,8 +178,8 @@ function positionEditor(){
  host.append(editor);editor.classList.remove('hidden');
  $('detailEmpty').classList.toggle('hidden',isDesktop());
 }
-function closeEditor(){editing=false;editId=null;editingDraft=false;positionEditor();renderList();flush()}
-function openEditor(id=null){
+function closeEditor(){editing=false;editId=null;editingDraft=false;if(isDesktop())openEditor(null,false);else{positionEditor();renderList()}flush()}
+function openEditor(id=null,focus=true){
  if(editing&&editId===id)return;
  editing=true;editId=id;editingDraft=!id;
  const n=id?notes.get(id):null;
@@ -191,7 +192,7 @@ function openEditor(id=null){
  $('archiveButton').textContent=n?.archivedAt?'Restore':'Archive';
  $('editorStatus').textContent=readOnly?'': 'Autosave';
  renderList();
- if(!readOnly){$('noteText').focus({preventScroll:isDesktop()})}
+ if(!readOnly&&focus){$('noteText').focus({preventScroll:isDesktop()})}
  else if(!isDesktop())document.getElementById('slot-'+id)?.scrollIntoView({block:'nearest'});
 }
 function updateVisibleNote(n){
@@ -292,7 +293,7 @@ async function pull(force=false){
   renderCategories();
   if(editing&&editId&&!contentPending.has(editId)){
    const n=notes.get(editId);
-   if(n&&n.originDeviceId!==device.deviceId){$('readOnlyFull').textContent=n.content;$('editorMeta').textContent=metaText(n);$('archiveButton').textContent=n.archivedAt?'Restore':'Archive'}
+   if(n){if(n.originDeviceId!==device.deviceId){$('readOnlyFull').textContent=n.content;$('editorMeta').textContent=metaText(n)}$('archiveButton').textContent=n.archivedAt?'Restore':'Archive'}
   }
   renderList();
  }catch(e){status(e.status===401?'Session expired':'Offline',!!e.status&&e.status!==401)}
@@ -356,7 +357,7 @@ async function boot(){
  const savedCategories=await setting('categories');if(savedCategories?.length)categories=savedCategories;
  notes=new Map((await getAll('notes')).map(n=>[n.id,n]));
  renderCategories();renderList();status('Local ready');ready=true;
- await pull(true);await flush();connectSocket();
+ await pull(true);await flush();connectSocket();if(isDesktop())openEditor(null,false);
  if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
 }
 $('loginForm').onsubmit=async e=>{
@@ -378,8 +379,8 @@ $('deleteCategory').onclick=deleteCategory;
 $('searchToggle').onclick=()=>setSearchOpen(!searchOpen);
 $('searchInput').oninput=renderList;
 $('searchInput').addEventListener('keydown',e=>{if(e.key==='Escape')setSearchOpen(false)});
-$('activeTab').onclick=()=>{archivedView=false;renderList()};
-$('archiveTab').onclick=()=>{archivedView=true;renderList()};
+$('activeTab').onclick=()=>{if(editing)closeEditor();archivedView=false;renderList()};
+$('archiveTab').onclick=()=>{if(editing)closeEditor();archivedView=true;renderList()};
 $('deviceButton').onclick=async()=>{
  if(!device)return;
  const name=prompt('Device name',device.name);if(!name?.trim()||name.trim()===device.name)return;
@@ -390,7 +391,7 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 window.addEventListener('online',()=>{status('Connecting…');flush();pull(true);connectSocket()});
 window.addEventListener('offline',()=>status('Offline · Saved locally'));
 window.addEventListener('scroll',updateSticky,{passive:true});
-window.addEventListener('resize',()=>{updateSticky();positionEditor()});
+window.addEventListener('resize',()=>{updateSticky();if(isDesktop()&&!editing)openEditor(null,false);else positionEditor()});
 setInterval(()=>{if(document.visibilityState==='visible'){flush();pull(false)}},8000);
 restorePanes();initSplitter('splitLeft','left');initSplitter('splitRight','right');updateSticky();
 boot().catch(e=>{showLogin();$('loginError').textContent='Initialization failed: '+e.message});
