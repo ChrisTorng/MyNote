@@ -181,80 +181,161 @@ function counts(){
  return {current:filtered.filter(n=>!n.archivedAt).length,archive:filtered.filter(n=>!!n.archivedAt).length};
 }
 function renderCategories(){
- const nav=$('categoryNav');nav.replaceChildren();
- categories.forEach(c=>{
- const b=document.createElement('button');b.className='chip'+(c.id===selected?' selected':'');b.title=c.name;
- const name=document.createElement('span');name.className='name';name.textContent=c.name;
- const count=document.createElement('span');count.className='chip-count';count.textContent=[...notes.values()].filter(n=>n.categoryId===c.id&&!n.archivedAt).length;
- b.append(name,count);b.onclick=()=>{if(editing)closeEditor();selected=c.id;renderCategories();renderList()};nav.append(b);
- });
- const plus=document.createElement('button');plus.className='chip add';plus.textContent='+';plus.title='Add category';plus.setAttribute('aria-label','Add category');plus.onclick=addCategory;nav.append(plus);
- $('deleteCategory').disabled=selected==='inbox';$('renameCategory').disabled=!categories.some(c=>c.id===selected);
+ const nav=$('categoryNav');
+ const scrollLeft=nav.scrollLeft;
+ nav.replaceChildren();
+ for(const c of categories){
+  const row=document.createElement('div');
+  row.className='cat-row';
+  const b=document.createElement('button');
+  b.type='button';b.className='chip'+(c.id===selected?' selected':'');
+  b.title='Select '+c.name;b.setAttribute('aria-label','Category '+c.name);
+  const name=document.createElement('span');name.className='name';name.textContent=c.name;
+  const count=document.createElement('span');count.className='chip-count';
+  count.textContent=[...notes.values()].filter(n=>n.categoryId===c.id&&!n.archivedAt).length;
+  b.append(name,count);
+  b.onclick=()=>{if(selected!==c.id){if(editing)closeEditor();selected=c.id;renderCategories();renderList(true)}};
+  row.append(b);
+  const tools=document.createElement('div');tools.className='cat-item-actions';
+  const edit=document.createElement('button');edit.type='button';edit.className='icon-btn flat';edit.title='Rename '+c.name+' (Alt+R)';
+  edit.innerHTML='<span class="pencil-glyph">✎</span>';
+  edit.setAttribute('aria-label','Rename '+c.name);
+  edit.onclick=e=>{e.stopPropagation();renameCategory(c.id)};
+  const del=document.createElement('button');del.type='button';del.className='icon-btn flat';
+  del.title='Delete '+c.name+' (Alt+Delete)';del.setAttribute('aria-label','Delete '+c.name);
+  del.textContent='×';del.disabled=c.id==='inbox';
+  del.onclick=e=>{e.stopPropagation();deleteCategory(c.id)};
+  tools.append(edit,del);row.append(tools);nav.append(row);
+ }
+ const plus=document.createElement('button');plus.className='chip add';plus.textContent='+';
+ plus.type='button';plus.title='Add category (Alt+C)';plus.setAttribute('aria-label','Add category');
+ plus.onclick=addCategory;nav.append(plus);
+ nav.scrollLeft=scrollLeft;
+ $('deleteCategory').disabled=selected==='inbox';
+ $('renameCategory').disabled=!categories.some(c=>c.id===selected);
 }
-function renderList(){
+function renderList(force=false){
  const q=$('searchInput').value.trim().toLowerCase(),c=counts();
  $('activeCount').textContent=c.current;$('archiveCount').textContent=c.archive;
  $('activeTab').classList.toggle('active',!archivedView);$('archiveTab').classList.toggle('active',archivedView);
- // Preserve the Android keyboard and cursor while remote updates arrive.
- if (!isDesktop() && editing && document.activeElement===$('noteText')) return;
+ // Preserve the editor and keyboard across autosaves, WebSocket events, and polling.
+ if(editing&&!force){
+  if(editId){const n=notes.get(editId);if(n)updateVisibleNote(n)}
+  return;
+ }
  const list=[...notes.values()].filter(n=>(!!n.archivedAt)===archivedView&&(q?searchMatches(n,q):n.categoryId===selected)).sort((a,b)=>b.updatedAt-a.updatedAt);
- const root=$('noteList');root.replaceChildren();
- if(!list.length){const empty=document.createElement('div');empty.className='empty';empty.textContent=q?'No results':archivedView?'No archived notes':'No notes';root.append(empty)}
+ const root=$('noteList');
+ // Only opening/closing notes or changing views may rebuild the list.
+ if(!isDesktop()&&$('expandedEditor').parentElement?.classList.contains('inline-slot')){
+  $('expandedEditor').classList.add('hidden');
+  $('newEditorHost').append($('expandedEditor'));
+ }
+ root.replaceChildren();
+ if(!list.length){
+  const empty=document.createElement('div');empty.className='empty';
+  empty.textContent=q?'No results':archivedView?'No archived notes':'No notes';
+  root.append(empty);
+ }
  for(const n of list){
-  const article=document.createElement('article');article.className='note'+(editId===n.id?' expanded':'');article.dataset.id=n.id;
-  const head=document.createElement('div');head.className='note-head';head.tabIndex=0;head.setAttribute('role','button');head.setAttribute('aria-expanded',String(editId===n.id));
-  head.addEventListener('click',()=>{if(editing&&editId===n.id){closeEditor();return}openEditor(n.id)});
-  head.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();head.click()}});
-  const first=document.createElement('div');first.className='note-line';
+  const article=document.createElement('article');
+  article.className='note'+(editId===n.id&&editing?' expanded':'');article.dataset.id=n.id;
+  const head=document.createElement('div');head.className='note-head';head.tabIndex=0;head.setAttribute('role','button');
+  head.setAttribute('aria-expanded',String(editId===n.id&&editing));
+  head.title='Open note (Enter)';
+  head.onclick=()=>{if(editing&&editId===n.id){closeEditor();return}openEditor(n.id)};
+  head.onkeydown=e=>{if(e.target!==head)return;if(e.key==='Enter'||e.key===' '){e.preventDefault();head.click()}};
+  const main=document.createElement('div');main.className='note-main';
+  const line=document.createElement('div');line.className='note-line';
   const title=document.createElement('div');title.className='note-title';title.textContent=firstLines(n.content)[0];
   const tools=document.createElement('div');tools.className='note-tools';
-  const archive=document.createElement('button');archive.className='icon-btn flat';archive.title=n.archivedAt?'Restore':'Archive';archive.setAttribute('aria-label',archive.title);archive.textContent=n.archivedAt?'↶':'▣';archive.onclick=e=>{e.stopPropagation();archiveNote(n.id)};tools.append(archive);
-  first.append(title,tools);
+  const archive=document.createElement('button');archive.className='icon-btn flat';archive.type='button';
+  archive.title=(n.archivedAt?'Restore':'Archive')+' (Alt+A)';
+  archive.setAttribute('aria-label',n.archivedAt?'Restore note':'Archive note');
+  archive.textContent=n.archivedAt?'↶':'▣';
+  archive.onclick=e=>{e.stopPropagation();archiveNote(n.id)};tools.append(archive);
+  line.append(title,tools);
   const excerpt=document.createElement('div');excerpt.className='note-excerpt';excerpt.textContent=firstLines(n.content)[1];
   const metadata=document.createElement('div');metadata.className='note-meta';
-  const origin=document.createElement('span');origin.className='origin';origin.textContent=n.originDeviceName||'Unknown device';metadata.append(origin);
-  const date=document.createElement('span');date.textContent=metaText(n);metadata.append(date);
-  if(n.originDeviceId!==device.deviceId){const ro=document.createElement('span');ro.className='read-only';ro.textContent='Read only';metadata.append(ro)}
-  if(q){const c=categories.find(c=>c.id===n.categoryId);if(c){const cat=document.createElement('span');cat.textContent=c.name;metadata.append(cat)}}
-  head.append(first,excerpt,metadata);article.append(head);
-  const slot=document.createElement('div');slot.className='inline-slot';slot.id='slot-'+n.id;article.append(slot);root.append(article);
+  const origin=document.createElement('span');origin.className='origin';origin.textContent=n.originDeviceName||'Unknown';
+  const mobileTimes=document.createElement('span');mobileTimes.className='mobile-times';mobileTimes.textContent=metaText(n);
+  metadata.append(origin,mobileTimes);
+  if(n.originDeviceId!==device.deviceId){
+   const ro=document.createElement('span');ro.className='read-only';ro.textContent='Read only';metadata.append(ro);
+  }
+  if(q){const cat=categories.find(x=>x.id===n.categoryId);if(cat){
+   const catName=document.createElement('span');catName.textContent=cat.name;metadata.append(catName);
+  }}
+  main.append(line,excerpt,metadata);
+  const dates=document.createElement('div');dates.className='note-dates';
+  const created=document.createElement('div');created.className='date-created';created.textContent='Created '+stamp(n.createdAt);
+  const edited=document.createElement('div');edited.className='date-edited';
+  edited.textContent=sameMinute(n.createdAt,n.updatedAt)?'':'Edited '+stamp(n.updatedAt,!sameDay(n.createdAt,n.updatedAt));
+  dates.append(created,edited);
+  head.append(main,dates);article.append(head);
+  const slot=document.createElement('div');slot.className='inline-slot';slot.id='slot-'+n.id;
+  article.append(slot);root.append(article);
  }
  positionEditor();
 }
 function positionEditor(){
  const editor=$('expandedEditor');
- if(!editing){editor.classList.add('hidden');$('detailEmpty').classList.remove('hidden');return}
+ if(!editing){
+  editor.classList.add('hidden');
+  $('detailEmpty').classList.remove('hidden');
+  return;
+ }
  let host;
- if(isDesktop()){host=$('desktopEditorHost')}
- else if(editId){host=document.getElementById('slot-'+editId)||$('newEditorHost')}
- else{host=$('newEditorHost')}
- host.append(editor);editor.classList.remove('hidden');
- $('detailEmpty').classList.toggle('hidden',isDesktop());
+ if(isDesktop())host=$('desktopEditorHost');
+ else if(editId)host=document.getElementById('slot-'+editId)||$('newEditorHost');
+ else host=$('newEditorHost');
+ // append() on an existing focused textarea can dismiss Android's keyboard.
+ if(editor.parentElement!==host)host.append(editor);
+ editor.classList.remove('hidden');
+ $('detailEmpty').classList.add('hidden');
 }
-function closeEditor(){editing=false;editId=null;editingDraft=false;if(isDesktop())openEditor(null,false);else{positionEditor();renderList()}flush()}
+function closeEditor(){
+ editing=false;editId=null;editingDraft=false;
+ $('expandedEditor').classList.add('hidden');
+ // Detach before rebuilding notes, never during text input.
+ if(!isDesktop()&&$('expandedEditor').parentElement?.classList.contains('inline-slot')){
+  $('newEditorHost').append($('expandedEditor'));
+ }
+ renderList(true);
+ if(isDesktop())openEditor(null,false);
+ else positionEditor();
+ flush();
+}
 function openEditor(id=null,focus=true){
  if(editing&&editId===id)return;
  editing=true;editId=id;editingDraft=!id;
  const n=id?notes.get(id):null;
  const readOnly=!!n&&n.originDeviceId!==device.deviceId;
- $('noteText').value=n?.content||'';$('noteText').classList.toggle('hidden',readOnly);
- $('readOnlyFull').classList.toggle('hidden',!readOnly);$('readOnlyFull').textContent=n?.content||'';
+ $('noteText').value=n?.content||'';
+ $('noteText').classList.toggle('hidden',readOnly);
+ $('readOnlyFull').classList.toggle('hidden',!readOnly);
+ $('readOnlyFull').textContent=n?.content||'';
  $('editorMeta').textContent=n?metaText(n):'New note';
  $('editorType').textContent=readOnly?'Read only':'';
  $('archiveButton').classList.toggle('hidden',!n);
  $('archiveButton').textContent=n?.archivedAt?'Restore':'Archive';
- $('editorStatus').textContent=readOnly?'': 'Autosave';
- renderList();
- if(!readOnly&&focus){$('noteText').focus({preventScroll:isDesktop()})}
- else if(!isDesktop())document.getElementById('slot-'+id)?.scrollIntoView({block:'nearest'});
+ $('editorStatus').textContent=readOnly?'':'Autosave';
+ renderList(true);
+ if(!readOnly&&focus){
+  $('noteText').focus({preventScroll:true});
+  if(!isDesktop()&&!id)$('newEditorHost').scrollIntoView({block:'nearest'});
+ }
 }
 function updateVisibleNote(n){
  const el=[...document.querySelectorAll('.note')].find(x=>x.dataset.id===n.id);
  if(!el)return;
  const first=firstLines(n.content);
- el.querySelector('.note-title').textContent=first[0];
- el.querySelector('.note-excerpt').textContent=first[1];
- const metadata=el.querySelector('.note-meta > span:nth-child(2)');if(metadata)metadata.textContent=metaText(n);
+ const title=el.querySelector('.note-title'),excerpt=el.querySelector('.note-excerpt');
+ if(title)title.textContent=first[0];
+ if(excerpt)excerpt.textContent=first[1];
+ const mobile=el.querySelector('.mobile-times');if(mobile)mobile.textContent=metaText(n);
+ const created=el.querySelector('.date-created');if(created)created.textContent='Created '+stamp(n.createdAt);
+ const edited=el.querySelector('.date-edited');
+ if(edited)edited.textContent=sameMinute(n.createdAt,n.updatedAt)?'':'Edited '+stamp(n.updatedAt,!sameDay(n.createdAt,n.updatedAt));
 }
 function persistNote(note,archive=false){
  const snapshot={...note};
@@ -274,17 +355,24 @@ function onText(){
  const content=$('noteText').value;
  let n=editId?notes.get(editId):null;
  if(n&&n.originDeviceId!==device.deviceId)return;
- if(!n){
+ const isNew=!n;
+ if(isNew){
   if(!content)return;
-  const now=Date.now();editId=crypto.randomUUID();n={id:editId,categoryId:selected,content:'',originDeviceId:device.deviceId,originDeviceName:device.name,createdAt:now,updatedAt:now,archivedAt:null,revision:0};
+  const now=Date.now();editId=crypto.randomUUID();
+  n={id:editId,categoryId:selected,content:'',originDeviceId:device.deviceId,originDeviceName:device.name,createdAt:now,updatedAt:now,archivedAt:null,revision:0};
   editingDraft=false;
  }
  n={...n,content,updatedAt:Date.now(),revision:n.revision+1};
- notes.set(n.id,n);persistNote(n);
+ notes.set(n.id,n);
+ persistNote(n);
  $('archiveButton').classList.remove('hidden');
  $('editorMeta').textContent=metaText(n);
  updateVisibleNote(n);
- renderCategories();
+ // Update numbers without recreating the navigation or active editor.
+ if(isNew){
+  renderCategories();
+  const countsNow=counts();$('activeCount').textContent=countsNow.current;$('archiveCount').textContent=countsNow.archive;
+ }
 }
 function scheduleSync(){clearTimeout(syncTimer);syncTimer=setTimeout(flush,500)}
 async function flush(){
@@ -387,7 +475,16 @@ function setSearchOpen(value){
  searchOpen=value;$('searchRow').classList.toggle('open',searchOpen);$('searchToggle').textContent=searchOpen?'×':'⌕';$('searchToggle').title=searchOpen?'Close search':'Search';
  if(searchOpen)$('searchInput').focus();else{$('searchInput').value='';renderList()}
 }
-function updateSticky(){if(!isDesktop())$('sidebar').classList.toggle('compact',window.scrollY>42);else $('sidebar').classList.remove('compact')}
+function updateSticky(){
+ if(isDesktop()){
+  $('sidebar').classList.remove('compact');
+  return;
+ }
+ // Hysteresis + constant sidebar dimensions prevent scroll-position oscillation.
+ const compact=$('sidebar').classList.contains('compact');
+ if(!compact&&window.scrollY>105)$('sidebar').classList.add('compact');
+ else if(compact&&window.scrollY<55)$('sidebar').classList.remove('compact');
+}
 function initSplitter(id,side){
  const el=$(id);let start=0,startVal=0;
  el.addEventListener('pointerdown',e=>{if(!isDesktop())return;e.preventDefault();el.setPointerCapture(e.pointerId);el.classList.add('dragging');start=e.clientX;startVal=parseInt(getComputedStyle($('workspace')).getPropertyValue(side==='left'?'--left':'--right'))|| (side==='left'?185:375);document.body.style.userSelect='none'});
