@@ -79,10 +79,10 @@ export default {
       }
       const stub = env.STORE.get(env.STORE.idFromName('private-single-user'));
       if (path === '/api/login' && request.method === 'POST') {
-        if (!env.SETUP_CODE_HASH) return fail('登入尚未完成設定', 503);
+        if (!env.SETUP_CODE_HASH) return fail('Access code is not configured', 503);
         const body = await request.json();
         const valid = equalHex(await sha256(String(body.code || '')), env.SETUP_CODE_HASH);
-        if (!valid) return fail('登入碼不正確', 401);
+        if (!valid) return fail('Invalid access code', 401);
         const token = randomToken();
         const tokenHash = await sha256(token);
         const reply = await forward(stub, '/internal/login', 'POST', {
@@ -97,7 +97,7 @@ export default {
       if (!token) return fail('Unauthorized', 401);
       const tokenHash = await sha256(token);
       const sessionReply = await forward(stub, '/internal/verify', 'POST', { tokenHash });
-      if (!sessionReply.ok) return fail('登入已失效，請重新登入', 401);
+      if (!sessionReply.ok) return fail('Session expired. Sign in again', 401);
       const session = await sessionReply.json();
       const device = session.device;
       if (path === '/api/me' && request.method === 'GET') {
