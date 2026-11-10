@@ -1,37 +1,51 @@
 # MyNote
 
-Minimal, mobile-first private notes.
+Fast, private, plain-text notes for Android Edge and desktop browsers.
 
 [Open MyNote](https://mynote.christorng.workers.dev/)
 
 ## Features
 
-- Categories: add, rename, delete; deletion moves notes to Inbox.
-- Inline mobile editing; other-device notes expand read-only.
-- Archive/restore from any signed-in device.
-- Created/edited dates with weekdays, compact duplicate suppression.
-- Search by note text or date.
-- Current/Archive counts and per-category Current counts.
-- Sticky mobile categories and a compact quick-add button when scrolling.
-- Resizable, persistent three-panel desktop layout.
-- Local IndexedDB autosave, offline queue and WebSocket refresh.
-- Device names and origin-device-only content edits.
+- Mobile: sticky category strip; quick add moves to the top-right on scroll.
+- Inline mobile editor; read-only notes expand to show full text once.
+- Desktop: resizable three-pane layout, persistent pane widths, new-note action at the top of the detail pane.
+- Hover over desktop categories to rename or delete.
+- Archive/restore on any signed-in device; only the origin device can edit note text.
+- Local IndexedDB autosave, offline queue, and live updates.
+- Compact timestamps with weekdays; hide redundant edit dates/times.
+- Search note content, device names, and dates.
+- Per-category current counts and Current/Archive totals.
+
+## Desktop shortcuts
+
+| Shortcut | Action |
+| --- | --- |
+| Alt+N | New note |
+| Alt+1 / Alt+2 | Current / Archive |
+| Ctrl+K or / | Search |
+| Alt+Up / Alt+Down | Previous / next note |
+| Up / Down | Move between focused note rows |
+| Enter | Open a focused note |
+| Alt+A | Archive or restore selected note |
+| Alt+C | Add category |
+| Alt+R | Rename selected category |
+| Alt+Delete | Delete selected category |
+| Ctrl+S | Sync now |
+| Esc or Ctrl+Enter | Close the editor |
+
+Hover a control for its shortcut.
 
 ## Stack
 
-- Frontend: plain HTML, CSS and JavaScript PWA — `src/ui.js`
-- API: Cloudflare Worker — `src/worker.js`
-- Database: SQLite-backed Durable Object
-- Authentication: access code plus device session (180-day sliding expiry)
+- Frontend: HTML, CSS, JavaScript PWA (`src/ui.js`)
+- Backend: Cloudflare Worker (`src/worker.js`)
+- Storage: SQLite-backed Durable Object, plus IndexedDB for offline changes
+- Login: access code and per-device session (180-day sliding expiry)
 
-## Deploy
+## Deployment
 
-Worker: `mynote` · Durable Object: `STORE` / `MyNoteStore` · Session credential hash: `SETUP_CODE_HASH`
+Worker: `mynote`; Durable Object: `STORE` / `MyNoteStore`; login hash binding: `SETUP_CODE_HASH`.
 
-Use the official GitHub connector for source edits and the Cloudflare connector for deployment.
+Use the official GitHub connector for source changes and the Cloudflare connector to deploy.
 
-## Status
-
-Cloudflare deployment is configured; end-to-end browser validation is pending.
-
-**Privacy:** No end-to-end encryption or independent backup yet. Cloudflare stores plaintext note content.
+**Limitations:** No end-to-end encryption or independent backup. Server-side note content is plaintext. Live Android/Windows interaction tests have not been completed.
