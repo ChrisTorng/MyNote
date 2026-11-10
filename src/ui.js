@@ -456,21 +456,21 @@ async function archiveNote(id){
  const next={...n,archivedAt:n.archivedAt?null:Date.now()};
  notes.set(id,next);persistNote(next,true);
  if(editing&&editId===id)closeEditor();
- renderCategories();renderList();
+ renderCategories();renderList(true);
 }
 async function addCategory(){
  const name=prompt('Category name');if(!name?.trim())return;
- try{await api('/category','POST',{id:crypto.randomUUID(),name:name.trim()});await pull(true)}catch(e){alert(e.message)}
+ try{await api('/category','POST',{id:crypto.randomUUID(),name:name.trim()});await pull(true);renderList(true)}catch(e){alert(e.message)}
 }
 async function renameCategory(id=selected){
  const c=categories.find(c=>c.id===id);if(!c)return;
  const name=prompt('Rename category',c.name);if(!name?.trim()||name.trim()===c.name)return;
- try{await api('/category','PATCH',{id:c.id,name:name.trim()});await pull(true)}catch(e){alert(e.message)}
+ try{await api('/category','PATCH',{id:c.id,name:name.trim()});await pull(true);renderList(true)}catch(e){alert(e.message)}
 }
 async function deleteCategory(id=selected){
  const c=categories.find(c=>c.id===id);if(!c||c.id==='inbox')return;
  if(!confirm('Delete '+c.name+'? Notes will move to Inbox.'))return;
- try{await api('/category','DELETE',{id:c.id});if(selected===c.id)selected='inbox';await pull(true)}catch(e){alert(e.message)}
+ try{await api('/category','DELETE',{id:c.id});if(selected===c.id)selected='inbox';await pull(true);renderList(true)}catch(e){alert(e.message)}
 }
 function connectSocket(){
  if(!device||!navigator.onLine)return;
