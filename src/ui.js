@@ -97,6 +97,16 @@ export const HTML = String.raw`<!doctype html>
  .search-row{height:0}
  .search-row.open{height:40px}
 }
+
+/* Remove empty preview rows and keep mobile cards dense. */
+.note-excerpt:empty{display:none}
+@media(max-width:960px){
+ .notes{gap:4px}
+ .note-head{padding:6px 8px}
+ .note-excerpt{margin-top:1px;height:auto;line-height:16px}
+ .note-meta{margin-top:3px}
+ .inline-slot{padding:0 8px 7px}
+}
 </style>
 </head>
 <body>
@@ -146,7 +156,7 @@ const $=id=>document.getElementById(id);
 const isDesktop=()=>window.matchMedia('(min-width:961px)').matches;
 const dayMs=86400000;
 let db=null,device=null,categories=[{id:'inbox',name:'Inbox'}],notes=new Map(),remoteVersion=0,selected='inbox',archivedView=false,editId=null,editing=false,editingDraft=false,persistChain=Promise.resolve(),syncing=false,pulling=false,socket=null,reconnectTimer,searchOpen=false,ready=false;
-let syncTimer, resendNeeded=false;
+let syncTimer, resendNeeded=false, localSaveError=null;
 const WEEK=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 function status(message,error=false){$('saveStatus').textContent=message;$('saveStatus').title=message;$('saveStatus').classList.toggle('error',error);$('editorStatus').textContent=editing&&editId&&notes.get(editId)?.originDeviceId===device?.deviceId?message:'';}
 function openDB(){return new Promise((resolve,reject)=>{const r=indexedDB.open('mynote-local-v1',2);r.onupgradeneeded=()=>{const d=r.result;if(!d.objectStoreNames.contains('notes'))d.createObjectStore('notes',{keyPath:'id'});if(!d.objectStoreNames.contains('outbox'))d.createObjectStore('outbox',{keyPath:'id'});if(!d.objectStoreNames.contains('settings'))d.createObjectStore('settings',{keyPath:'key'});if(!d.objectStoreNames.contains('archiveOutbox'))d.createObjectStore('archiveOutbox',{keyPath:'id'})};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
@@ -174,7 +184,7 @@ function dateTokens(ts){
  return [stamp(ts),y+'/'+m+'/'+day,y+'/'+mm+'/'+dd,y+'-'+mm+'-'+dd,m+'/'+day,mm+'/'+dd,m+'/'+dd,mm+'/'+day,m+'-'+day,m+'.'+day,y+'年'+m+'月'+day+'日',w,d.getHours()+':'+d.getMinutes()].join(' ').toLowerCase();
 }
 function searchMatches(n,q){if(!q)return true;return (n.content+' '+n.originDeviceName+' '+dateTokens(n.createdAt)+' '+dateTokens(n.updatedAt)).toLowerCase().includes(q)}
-function firstLines(value){const a=String(value||'').replace(/\r/g,'').split('\n');return [a[0]||'(Untitled)',a.slice(1).find(x=>x.trim())||' ']}
+function firstLines(value){const a=String(value||'').replace(/\r/g,'').split('\n');return [a[0]||'(Untitled)',a[1]||'']}
 function counts(){
  const q=$('searchInput').value.trim().toLowerCase();
  const filtered=[...notes.values()].filter(n=>searchMatches(n,q)&&(q||n.categoryId===selected));
@@ -346,9 +356,8 @@ function persistNote(note,archive=false){
   t.objectStore('notes').put(snapshot);
   if(archive)t.objectStore('archiveOutbox').put({id:snapshot.id,archived:!!snapshot.archivedAt});
   else t.objectStore('outbox').put({id:snapshot.id,note:snapshot,revision:snapshot.revision});
-  await done(t);status(navigator.onLine?'Saved locally · Sync pending':'Saved locally · Offline');
- }).catch(e=>status('Local save failed: '+e.message,true));
- persistChain.then(scheduleSync);
+  await done(t);localSaveError=null;status(navigator.onLine?'Saved locally · Sync pending':'Saved locally · Offline');scheduleSync();
+ }).catch(e=>{localSaveError=e;status('Local save failed: '+e.message,true)});
 }
 function onText(){
  if(!device||!editing)return;
@@ -381,6 +390,7 @@ async function flush(){
  syncing=true;
  try{
   await persistChain;
+  if(localSaveError)return;
   const out=await getAll('outbox');
   for(const item of out.sort((a,b)=>a.note.updatedAt-b.note.updatedAt)){
    await api('/note','PUT',item.note);
