@@ -44,6 +44,59 @@ export const HTML = String.raw`<!doctype html>
  .middle{overflow:visible;padding:6px 0 10px}.toolbar{margin-bottom:5px}.note-head{padding:7px 9px}.editor textarea{min-height:160px;font-size:16px}.search-row.open{height:40px}
 }
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;animation:none!important}}
+
+/* Stable panels: never detach or resize the scrolling sticky container during scroll. */
+.pencil-glyph{display:inline-block;transform:scaleX(-1)}
+.cat-row{position:relative;display:flex;min-width:0;align-items:center}
+.cat-row>.chip{flex:1;min-width:0}
+.cat-item-actions{display:none;position:absolute;right:2px;top:2px;bottom:2px;gap:1px;align-items:center;background:var(--paper);border-radius:6px}
+.cat-row:hover .cat-item-actions,.cat-row:focus-within .cat-item-actions{display:flex}
+.cat-item-actions .icon-btn{width:24px;height:24px;font-size:14px}
+.cat-row:hover .chip-count,.cat-row:focus-within .chip-count{visibility:hidden}
+@media(hover:none){.cat-item-actions{display:none!important}}
+.detail-bar{height:40px;display:flex;align-items:center;position:sticky;top:-9px;z-index:3;background:var(--bg);padding:3px 0 7px}
+.detail-bar>.btn{width:100%;text-align:left}
+.desktop-editor-host .editor{margin-top:4px}
+.note-head{display:grid;grid-template-columns:minmax(0,1fr) max-content;gap:7px;align-items:center}
+.note-main{min-width:0}
+.note-dates{min-width:120px;display:flex;flex-direction:column;gap:2px;text-align:right;font-size:10.5px;color:var(--muted);line-height:1.4}
+.note-dates>div:empty{display:none}
+.note-meta .mobile-times{display:none}
+.note.expanded .note-excerpt{display:block}
+.note-head:focus-visible{outline-offset:-2px}
+.editor pre{overflow-wrap:anywhere;white-space:pre-wrap}
+@media(min-width:961px){
+ .sidebar .cat-header .cat-actions{display:none}
+ .sidebar .quick-wrap{display:none}
+ .search-row{height:34px;opacity:1;overflow:visible;transition:none;margin-bottom:7px}
+ .search-row.open{height:34px}
+ .search-toggle{display:none}
+ .note-head .note-meta{margin-top:5px}
+ .note-head{min-height:55px}
+ .detail .editor textarea{min-height:220px}
+}
+@media(max-width:960px){
+ .sidebar,.sidebar.compact{height:108px;top:-66px;transition:none;padding:5px 0 3px;overflow:visible}
+ .sidebar .cat-header,.sidebar.compact .cat-header{height:25px;opacity:1;overflow:visible;transition:none}
+ .sidebar .categories,.sidebar.compact .categories{height:38px;transform:translateY(0);transition:transform .23s ease}
+ .sidebar.compact .categories{transform:translateY(36px);padding-right:45px}
+ .sidebar .quick-wrap,.sidebar.compact .quick-wrap{height:37px;margin:0;transition:none}
+ .sidebar .quick-add,.sidebar.compact .quick-add{top:70px;height:33px;min-height:33px}
+ .sidebar.compact .quick-add{left:calc(100% - 37px);width:37px;right:0;top:70px}
+ .sidebar.compact .cat-header{pointer-events:none}
+ .sidebar .cat-item-actions{display:none!important}
+ .sidebar .cat-row{flex-shrink:0}
+ .sidebar .cat-row>.chip{flex-shrink:0}
+ .note-head{display:block}
+ .note-dates{display:none}
+ .note-meta .mobile-times{display:inline}
+ .note.expanded>.note-head{display:none}
+ .note.expanded>.inline-slot{padding:0 9px 8px}
+ .note.expanded .inline-slot .editor{border-top:0;padding-top:7px}
+ .note.expanded .note-excerpt{display:none}
+ .search-row{height:0}
+ .search-row.open{height:40px}
+}
 </style>
 </head>
 <body>
@@ -62,28 +115,28 @@ export const HTML = String.raw`<!doctype html>
 </header>
 <main class="workspace" id="workspace">
 <aside class="sidebar" id="sidebar">
- <div class="cat-header"><span class="minor-title">Categories</span><div class="cat-actions"><button id="renameCategory" class="icon-btn flat" title="Rename" aria-label="Rename category">✎</button><button id="deleteCategory" class="icon-btn flat" title="Delete" aria-label="Delete category">×</button></div></div>
+ <div class="cat-header"><span class="minor-title">Categories</span><div class="cat-actions"><button id="renameCategory" class="icon-btn flat" title="Rename category (Alt+R)" aria-label="Rename category"><span class="pencil-glyph">✎</span></button><button id="deleteCategory" class="icon-btn flat" title="Delete category (Alt+Delete)" aria-label="Delete category">×</button></div></div>
  <nav id="categoryNav" class="categories" aria-label="Categories"></nav>
- <div class="quick-wrap"><button id="quickAdd" class="quick-add"><span class="symbol">+</span><span class="quick-label">New note</span></button></div>
+ <div class="quick-wrap"><button id="quickAdd" class="quick-add" title="New note (Alt+N)"><span class="symbol">+</span><span class="quick-label">New note</span></button></div>
 </aside>
 <div id="splitLeft" class="splitter" title="Drag to resize"></div>
 <section class="middle">
 <div class="toolbar">
-<div class="tabs"><button id="activeTab" class="tab active">Current <span id="activeCount" class="tab-count">0</span></button><button id="archiveTab" class="tab">Archive <span id="archiveCount" class="tab-count">0</span></button></div>
-<div class="tool-right"><button id="searchToggle" class="icon-btn search-toggle" title="Search" aria-label="Search">⌕</button></div>
+<div class="tabs"><button id="activeTab" class="tab active" title="Current notes (Alt+1)">Current <span id="activeCount" class="tab-count">0</span></button><button id="archiveTab" class="tab" title="Archived notes (Alt+2)">Archive <span id="archiveCount" class="tab-count">0</span></button></div>
+<div class="tool-right"><button id="searchToggle" class="icon-btn search-toggle" title="Search (Ctrl+K)" aria-label="Search">⌕</button></div>
 </div>
 <div id="searchRow" class="search-row"><input id="searchInput" class="search-input" type="search" placeholder="Search text or date" autocomplete="off"></div>
 <div id="newEditorHost" class="new-editor-host"></div>
 <div id="noteList" class="notes"></div>
 </section>
 <div id="splitRight" class="splitter" title="Drag to resize"></div>
-<aside id="detail" class="detail"><div id="desktopEditorHost" class="desktop-editor-host"></div><div id="detailEmpty" class="detail-empty"></div></aside>
+<aside id="detail" class="detail"><div class="detail-bar"><button id="desktopNew" class="btn primary" title="New note (Alt+N)">+ New note</button></div><div id="desktopEditorHost" class="desktop-editor-host"></div><div id="detailEmpty" class="detail-empty"></div></aside>
 </main>
 <div id="expandedEditor" class="editor hidden">
 <div class="editor-top"><span id="editorMeta"></span><span id="editorType"></span></div>
 <textarea id="noteText" placeholder="Type here…"></textarea>
 <pre id="readOnlyFull" class="hidden"></pre>
-<div class="editor-actions"><span id="editorStatus" class="editor-status"></span><button id="archiveButton" class="btn hidden">Archive</button><button id="doneButton" class="btn primary">Close</button></div>
+<div class="editor-actions"><span id="editorStatus" class="editor-status"></span><button id="archiveButton" class="btn hidden">Archive</button><button id="doneButton" class="btn primary" title="Close (Esc / Ctrl+Enter)">Close</button></div>
 </div>
 </div>
 <script nonce="__NONCE__">
