@@ -141,6 +141,8 @@ function renderList(){
  const q=$('searchInput').value.trim().toLowerCase(),c=counts();
  $('activeCount').textContent=c.current;$('archiveCount').textContent=c.archive;
  $('activeTab').classList.toggle('active',!archivedView);$('archiveTab').classList.toggle('active',archivedView);
+ // Preserve the Android keyboard and cursor while remote updates arrive.
+ if (!isDesktop() && editing && document.activeElement===$('noteText')) return;
  const list=[...notes.values()].filter(n=>(!!n.archivedAt)===archivedView&&(q?searchMatches(n,q):n.categoryId===selected)).sort((a,b)=>b.updatedAt-a.updatedAt);
  const root=$('noteList');root.replaceChildren();
  if(!list.length){const empty=document.createElement('div');empty.className='empty';empty.textContent=q?'No results':archivedView?'No archived notes':'No notes';root.append(empty)}
