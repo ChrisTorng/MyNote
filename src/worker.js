@@ -1,5 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import { HTML } from './ui.js';
+import { PNG_BASE64 } from './icon-data.js';
 
 const DAY = 86400000;
 const SESSION_DAYS = 180;
@@ -31,8 +32,47 @@ function randomToken() {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
-const icon = JSON.stringify({ name: 'MyNote', short_name: 'MyNote', start_url: '/', display: 'standalone', background_color: '#10151d', theme_color: '#111a27', icons: [{src:'/icon.svg',sizes:'any',type:'image/svg+xml',purpose:'any'}] });
-const sw = "const CACHE='mynote-shell-v1';self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(['/','/manifest.webmanifest'])));self.skipWaiting()});self.addEventListener('activate',e=>{e.waitUntil(self.clients.claim())});self.addEventListener('fetch',e=>{if(e.request.method!=='GET'||new URL(e.request.url).pathname.startsWith('/api/'))return;const path=new URL(e.request.url).pathname;if(e.request.mode==='navigate'||path==='/manifest.webmanifest'){e.respondWith(fetch(e.request).then(r=>{if(r.ok){const copy=r.clone();caches.open(CACHE).then(c=>c.put(e.request,copy))}return r}).catch(()=>caches.match(e.request)))}})";
+
+const mainManifest=JSON.stringify({
+  id:'/',name:'MyNote',short_name:'MyNote',description:'Private offline-first notes',lang:'en',
+  start_url:'/',scope:'/',display:'standalone',display_override:['standalone'],
+  background_color:'#1c548c',theme_color:'#111a27',
+  icons:[
+    {src:'/icon-192.png',sizes:'192x192',type:'image/png',purpose:'any'},
+    {src:'/icon-512.png',sizes:'512x512',type:'image/png',purpose:'any'}
+  ],
+  shortcuts:[{
+    name:'Quick add note',short_name:'New note',description:'Create a new note immediately',
+    url:'/#/new',icons:[{src:'/quick-192.png',sizes:'192x192',type:'image/png'}]
+  }]
+});
+const quickManifest=JSON.stringify({
+  id:'/quick-add',name:'MyNote Quick Add',short_name:'Quick Note',description:'Start writing a note instantly',
+  lang:'en',start_url:'/quick-add#/new',scope:'/quick-add',display:'standalone',
+  background_color:'#075961',theme_color:'#075961',
+  icons:[
+    {src:'/quick-192.png',sizes:'192x192',type:'image/png',purpose:'any'},
+    {src:'/quick-512.png',sizes:'512x512',type:'image/png',purpose:'any'}
+  ]
+});
+function svgIcon(quick=false){
+ const bg=quick?'#075961':'#1c548c',accent=quick?'#25b99e':'#ffbd55';
+ const center=quick?
+   '<path d="M138 122v30M123 137h30" stroke="white" stroke-width="9" stroke-linecap="round"/>':
+   '<path d="m124 149 4-15 17-17 10 10-17 17-14 5Z" fill="white"/>';
+ return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">'+
+  '<rect width="192" height="192" rx="37" fill="'+bg+'"/>'+
+  '<path d="M58 28h56l31 31v93a12 12 0 0 1-12 12H58a12 12 0 0 1-12-12V40a12 12 0 0 1 12-12Z" fill="#f8fcff"/>'+
+  '<path d="M114 28v22a9 9 0 0 0 9 9h22" fill="#bad8ec"/>'+
+  '<path d="M66 82h50M66 104h50M66 126h34" stroke="#4b819f" stroke-width="8" stroke-linecap="round"/>'+
+  '<circle cx="138" cy="136" r="30" fill="'+bg+'"/><circle cx="138" cy="136" r="24" fill="'+accent+'"/>'+center+'</svg>';
+}
+function pngResponse(name){
+ const binary=atob(PNG_BASE64[name]);
+ const data=Uint8Array.from(binary,c=>c.charCodeAt(0));
+ return new Response(data,{headers:{'content-type':'image/png','cache-control':'public,max-age=86400','x-content-type-options':'nosniff'}});
+}
+const sw = "const CACHE='mynote-shell-v3';\nconst FILES=['/','/quick-add','/manifest.webmanifest','/quick.webmanifest','/icon.svg','/quick-icon.svg','/icon-192.png','/icon-512.png','/quick-192.png','/quick-512.png'];\nself.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES)).then(()=>self.skipWaiting())));\nself.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('mynote-shell-')&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));\nself.addEventListener('fetch',e=>{\n if(e.request.method!=='GET')return;\n const url=new URL(e.request.url);\n if(url.origin!==self.location.origin||url.pathname.startsWith('/api/'))return;\n if(e.request.mode==='navigate'){\n  e.respondWith(fetch(e.request).then(r=>{if(r.ok)caches.open(CACHE).then(c=>c.put(e.request,r.clone()));return r}).catch(()=>caches.match(e.request).then(r=>r||caches.match(url.pathname)||caches.match('/'))));return;\n }\n if(FILES.includes(url.pathname)){\n  e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request)));return;\n }\n});";
 async function forward(stub, path, method = 'GET', body, headers = {}) {
   const init = { method, headers };
   if (body !== undefined) {
@@ -48,9 +88,15 @@ export default {
     try {
       const url = new URL(request.url);
       const path = url.pathname;
-      if (request.method === 'GET' && (path === '/' || path === '/index.html')) {
+      if (request.method === 'GET' && (path === '/' || path === '/index.html' || path === '/quick-add')) {
         const nonce = randomToken();
-        return new Response(HTML.replace('__NONCE__', nonce), {
+        let html=HTML.replace('__NONCE__', nonce);
+        if(path==='/quick-add')html=html
+          .replace('href="/manifest.webmanifest"','href="/quick.webmanifest"')
+          .replace('href="/icon.svg"','href="/quick-icon.svg"')
+          .replace('href="/icon-192.png"','href="/quick-192.png"')
+          .replace('<title>MyNote</title>','<title>MyNote - Quick Add</title>');
+        return new Response(html, {
           headers: {
             'content-type': 'text/html; charset=utf-8',
             'cache-control': 'no-cache',
@@ -61,12 +107,17 @@ export default {
           }
         });
       }
-      if (request.method === 'GET' && path === '/manifest.webmanifest') {
-        return new Response(icon, { headers: { 'content-type': 'application/manifest+json' } });
+      if (request.method === 'GET' && (path === '/manifest.webmanifest' || path==='/quick.webmanifest')) {
+        return new Response(path==='/quick.webmanifest'?quickManifest:mainManifest, { headers: { 'content-type': 'application/manifest+json', 'cache-control':'no-cache' } });
       }
-      if (request.method === 'GET' && path === '/icon.svg') {
-        return new Response('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192"><rect width="192" height="192" rx="34" fill="#173959"/><path d="M42 133V59l54 57 54-57v74" fill="none" stroke="#f3f7fc" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/></svg>', { headers: { 'content-type': 'image/svg+xml', 'cache-control':'public,max-age=86400' } });
+      if (request.method === 'GET' && (path === '/icon.svg' || path === '/quick-icon.svg')) {
+        return new Response(svgIcon(path==='/quick-icon.svg'), { headers: { 'content-type': 'image/svg+xml', 'cache-control':'no-cache' } });
       }
+      const iconKey={
+        '/icon-192.png':'main-192','/icon-512.png':'main-512',
+        '/quick-192.png':'quick-192','/quick-512.png':'quick-512'
+      }[path];
+      if(request.method==='GET'&&iconKey)return pngResponse(iconKey);
       if (request.method === 'GET' && path === '/sw.js') {
         return new Response(sw, { headers: { 'content-type': 'text/javascript', 'cache-control': 'no-cache' } });
       }

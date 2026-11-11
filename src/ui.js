@@ -8,12 +8,18 @@ export const HTML = String.raw`<!doctype html>
 <meta name="referrer" content="no-referrer">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon-192.png">
 <title>MyNote</title>
 <style>
 :root{color-scheme:light dark;--bg:#f5f7fa;--paper:#fff;--ink:#202833;--muted:#687585;--line:#e0e5ec;--primary:#2768aa;--tint:#eaf3fe;--danger:#ae3b3b}
 @media(prefers-color-scheme:dark){:root{--bg:#10151c;--paper:#1b2531;--ink:#e9eff6;--muted:#a6b2c0;--line:#364453;--primary:#91c4ff;--tint:#233d59;--danger:#fd9292}}
 *{box-sizing:border-box}html{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:14px}body{margin:0;background:var(--bg);color:var(--ink)}button,input,textarea{font:inherit;color:inherit}button{cursor:pointer}button:disabled{opacity:.45;cursor:default}.hidden{display:none!important}
-.app-wrap{max-width:1800px;margin:auto;padding:0 12px}.top{height:46px;display:flex;gap:9px;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}
+.app-wrap{max-width:1800px;margin:auto;padding:0 12px}
+.app-actions{position:relative}
+.app-menu{position:absolute;top:34px;right:0;z-index:50;width:min(270px,85vw);background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:10px;box-shadow:0 8px 22px #0002}
+.app-menu .btn,.app-menu a{display:block;width:100%;text-align:left;padding:9px 10px;text-decoration:none}
+.app-menu p{font-size:11px;color:var(--muted);line-height:1.5;margin:6px 2px 0}
+.app-menu a{color:var(--ink)}.top{height:46px;display:flex;gap:9px;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}
 .brand{font-size:17px;font-weight:750;letter-spacing:-.3px}.top-right,.top-left{display:flex;align-items:center;gap:10px}.top-right{gap:6px}.status{font-size:11px;color:var(--muted)}.status.error{color:var(--danger)}
 .btn,.chip,.tab,.icon-btn{border:1px solid var(--line);border-radius:8px;background:var(--paper);padding:5px 9px;line-height:1.3}.btn:hover,.chip:hover,.tab:hover,.icon-btn:hover{border-color:var(--primary)}.btn.primary,.chip.selected,.tab.active{background:var(--tint);border-color:var(--primary);color:var(--primary)}
 .btn.danger{color:var(--danger)}.btn.flat,.icon-btn.flat{background:transparent;border-color:transparent}.icon-btn{width:27px;height:26px;display:grid;place-items:center;padding:0;font-size:16px}.btn:focus-visible,.chip:focus-visible,.note-head:focus-visible,.icon-btn:focus-visible{outline:2px solid var(--primary)}
@@ -121,7 +127,7 @@ export const HTML = String.raw`<!doctype html>
 <div id="app" class="app-wrap hidden">
 <header class="top">
 <div class="top-left"><strong class="brand">MyNote</strong><span id="saveStatus" class="status" aria-live="polite"></span></div>
-<div class="top-right"><button id="deviceButton" class="btn flat">Device</button><button id="logoutButton" class="btn flat">Sign out</button></div>
+<div class="top-right"><div class="app-actions"><button id="appMenuButton" class="btn flat" aria-expanded="false" aria-controls="appMenu">App</button><div id="appMenu" class="app-menu hidden"><button id="installAction" class="btn" type="button">Install this app</button><a id="quickAppAction" class="btn" href="/quick-add" target="_blank" rel="noopener">Quick Add app</a><button id="copyViewLink" class="btn" type="button">Copy view link</button><p>若無安裝提示，請從瀏覽器選單選擇 Install app／Add to Home screen。</p></div></div><button id="deviceButton" class="btn flat">Device</button><button id="logoutButton" class="btn flat">Sign out</button></div>
 </header>
 <main class="workspace" id="workspace">
 <aside class="sidebar" id="sidebar">
@@ -156,9 +162,100 @@ const $=id=>document.getElementById(id);
 const isDesktop=()=>window.matchMedia('(min-width:961px)').matches;
 const dayMs=86400000;
 let db=null,device=null,categories=[{id:'inbox',name:'Inbox'}],notes=new Map(),remoteVersion=0,selected='inbox',archivedView=false,editId=null,editing=false,editingDraft=false,persistChain=Promise.resolve(),syncing=false,pulling=false,socket=null,reconnectTimer,searchOpen=false,ready=false;
-let syncTimer, resendNeeded=false, localSaveError=null;
+let syncTimer, resendNeeded=false, localSaveError=null, editorWasNew=false, installPrompt=null;
+const isQuickApp=location.pathname==='/quick-add';
 const WEEK=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 function status(message,error=false){$('saveStatus').textContent=message;$('saveStatus').title=message;$('saveStatus').classList.toggle('error',error);$('editorStatus').textContent=editing&&editId&&notes.get(editId)?.originDeviceId===device?.deviceId?message:'';}
+
+function viewHash(cat=selected,archive=archivedView){return '#/'+(archive?'archive':'current')+'/'+encodeURIComponent(cat)}
+function noteHash(id){return '#/note/'+encodeURIComponent(id)}
+function newHash(cat='inbox'){return cat==='inbox'?'#/new':'#/new/'+encodeURIComponent(cat)}
+function parseRoute(){
+ const parts=(location.hash.startsWith('#/')?location.hash.slice(2):'').split('/');
+ let dec=s=>{try{return decodeURIComponent(s||'')}catch{return ''}};
+ if(parts[0]==='note'&&parts[1])return {kind:'note',id:dec(parts[1])};
+ if(parts[0]==='new')return {kind:'new',cat:dec(parts[1])||'inbox'};
+ if(parts[0]==='current'||parts[0]==='archive')return {kind:'view',cat:dec(parts[1])||'inbox',archive:parts[0]==='archive'};
+ return {kind:'view',cat:'inbox',archive:false,invalid:true};
+}
+function knownCategory(id){return categories.some(c=>c.id===id)?id:'inbox'}
+function snapshotScroll(){return {y:window.scrollY,middle:document.querySelector('.middle').scrollTop,detail:$('detail').scrollTop,cat:$('categoryNav').scrollLeft}}
+function restoreScroll(s){
+ if(!s)return;
+ requestAnimationFrame(()=>{
+  $('categoryNav').scrollLeft=s.cat||0;
+  document.querySelector('.middle').scrollTop=s.middle||0;
+  $('detail').scrollTop=s.detail||0;
+  window.scrollTo(0,s.y||0);
+ });
+}
+function navigate(hash,opts={}){
+ if(!ready)return;
+ if(location.hash!==hash){
+  const before=history.state&&typeof history.state==='object'?history.state:{};
+  history.replaceState({...before,scroll:snapshotScroll()},'',location.href);
+  const target=location.pathname+location.search+hash;
+  if(opts.replace)history.replaceState({scroll:null},'',target);
+  else history.pushState({scroll:null},'',target);
+ }
+ applyRoute(!!opts.focus);
+ if(!opts.preserveScroll){
+  if(isDesktop())document.querySelector('.middle').scrollTop=0;
+  else window.scrollTo(0,0);
+ }
+}
+function applyRoute(focus=false){
+ if(!device)return;
+ const r=parseRoute();
+ if(r.invalid)history.replaceState(history.state,'',location.pathname+location.search+viewHash('inbox',false));
+ if(r.kind==='view'){
+  if(editing)dismissEditor();
+  selected=knownCategory(r.cat);archivedView=r.archive;
+  renderCategories();renderList(true);
+  if(isDesktop())openEditor(null,false);
+ }else if(r.kind==='new'){
+  selected=knownCategory(r.cat);archivedView=false;
+  if(editing&&editId===null&&editorWasNew){
+   renderCategories();renderList();
+   if(focus)$('noteText').focus({preventScroll:true});
+  }else{
+   if(editing)dismissEditor();
+   renderCategories();openEditor(null,focus);
+  }
+ }else if(r.kind==='note'){
+  const n=notes.get(r.id);
+  if(!n){
+   if(editing)dismissEditor();
+   renderCategories();renderList(true);
+   $('detailEmpty').textContent='Note not available on this device yet';
+   return;
+  }
+  selected=knownCategory(n.categoryId);archivedView=!!n.archivedAt;
+  renderCategories();
+  if(editing&&editId===r.id){renderList();return}
+  if(editing)dismissEditor();
+  openEditor(r.id,focus);
+ }
+}
+function pickCategory(id){
+ if(selected===id){
+  if(parseRoute().kind==='note'&&!editorWasNew)navigate(viewHash(id,archivedView));
+  return;
+ }
+ if(editing&&editorWasNew&&editId){
+  const n=notes.get(editId);
+  if(n&&n.originDeviceId===device.deviceId){
+   const changed={...n,categoryId:id,updatedAt:Date.now(),revision:n.revision+1};
+   notes.set(editId,changed);persistNote(changed);
+  }
+  selected=id;renderCategories();renderList();return;
+ }
+ if(editing&&editorWasNew&&!editId&&parseRoute().kind==='new'){
+  navigate(newHash(id),{focus:true,preserveScroll:true});return;
+ }
+ navigate(viewHash(id,archivedView));
+}
+
 function openDB(){return new Promise((resolve,reject)=>{const r=indexedDB.open('mynote-local-v1',2);r.onupgradeneeded=()=>{const d=r.result;if(!d.objectStoreNames.contains('notes'))d.createObjectStore('notes',{keyPath:'id'});if(!d.objectStoreNames.contains('outbox'))d.createObjectStore('outbox',{keyPath:'id'});if(!d.objectStoreNames.contains('settings'))d.createObjectStore('settings',{keyPath:'key'});if(!d.objectStoreNames.contains('archiveOutbox'))d.createObjectStore('archiveOutbox',{keyPath:'id'})};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
 function req(r){return new Promise((resolve,reject)=>{r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
 function done(t){return new Promise((resolve,reject)=>{t.oncomplete=resolve;t.onerror=()=>reject(t.error);t.onabort=()=>reject(t.error||Error('Transaction aborted'))})}
@@ -204,7 +301,7 @@ function renderCategories(){
   const count=document.createElement('span');count.className='chip-count';
   count.textContent=[...notes.values()].filter(n=>n.categoryId===c.id&&!n.archivedAt).length;
   b.append(name,count);
-  b.onclick=()=>{if(selected!==c.id){if(editing)closeEditor();selected=c.id;renderCategories();renderList(true)}};
+  b.onclick=()=>pickCategory(c.id);
   row.append(b);
   const tools=document.createElement('div');tools.className='cat-item-actions';
   const edit=document.createElement('button');edit.type='button';edit.className='icon-btn flat';edit.title='Rename '+c.name+' (Alt+R)';
@@ -252,7 +349,7 @@ function renderList(force=false){
   const head=document.createElement('div');head.className='note-head';head.tabIndex=0;head.setAttribute('role','button');
   head.setAttribute('aria-expanded',String(editId===n.id&&editing));
   head.title='Open note (Enter)';
-  head.onclick=()=>{if(editing&&editId===n.id){closeEditor();return}openEditor(n.id)};
+  head.onclick=()=>{if(editing&&editId===n.id){closeEditor();return}navigate(noteHash(n.id),{focus:true,preserveScroll:true})};
   head.onkeydown=e=>{if(e.target!==head)return;if(e.key==='Enter'||e.key===' '){e.preventDefault();head.click()}};
   const main=document.createElement('div');main.className='note-main';
   const line=document.createElement('div');line.className='note-line';
@@ -296,28 +393,32 @@ function positionEditor(){
  }
  let host;
  if(isDesktop())host=$('desktopEditorHost');
- else if(editId)host=document.getElementById('slot-'+editId)||$('newEditorHost');
+ else if(editId&&!editorWasNew)host=document.getElementById('slot-'+editId)||$('newEditorHost');
  else host=$('newEditorHost');
  // append() on an existing focused textarea can dismiss Android's keyboard.
  if(editor.parentElement!==host)host.append(editor);
  editor.classList.remove('hidden');
  $('detailEmpty').classList.add('hidden');
 }
-function closeEditor(){
- editing=false;editId=null;editingDraft=false;
+function dismissEditor(){
+ editing=false;editId=null;editingDraft=false;editorWasNew=false;
  $('expandedEditor').classList.add('hidden');
- // Detach before rebuilding notes, never during text input.
  if(!isDesktop()&&$('expandedEditor').parentElement?.classList.contains('inline-slot')){
   $('newEditorHost').append($('expandedEditor'));
  }
- renderList(true);
- if(isDesktop())openEditor(null,false);
- else positionEditor();
+}
+function closeEditor(){
+ if(!editing)return;
+ dismissEditor();
+ navigate(viewHash(),{replace:true,preserveScroll:true});
  flush();
 }
 function openEditor(id=null,focus=true){
- if(editing&&editId===id)return;
- editing=true;editId=id;editingDraft=!id;
+ if(editing&&editId===id){
+  if(focus&&!$('noteText').classList.contains('hidden'))$('noteText').focus({preventScroll:true});
+  return;
+ }
+ editing=true;editId=id;editingDraft=!id;editorWasNew=!id;
  const n=id?notes.get(id):null;
  const readOnly=!!n&&n.originDeviceId!==device.deviceId;
  $('noteText').value=n?.content||'';
@@ -379,6 +480,7 @@ function onText(){
  updateVisibleNote(n);
  // Update numbers without recreating the navigation or active editor.
  if(isNew){
+  history.replaceState(history.state,'',location.pathname+location.search+noteHash(editId));
   renderCategories();
   const countsNow=counts();$('activeCount').textContent=countsNow.current;$('archiveCount').textContent=countsNow.archive;
  }
@@ -448,6 +550,8 @@ async function pull(force=false){
    if(n){if(n.originDeviceId!==device.deviceId){$('readOnlyFull').textContent=n.content;$('editorMeta').textContent=metaText(n)}$('archiveButton').textContent=n.archivedAt?'Restore':'Archive'}
   }
   renderList();
+  const route=parseRoute();
+  if(route.kind==='note'&&(!editing||editId!==route.id)&&notes.has(route.id))applyRoute(false);
  }catch(e){status(e.status?'Refresh '+e.status+': '+e.message:'Offline',!!e.status)}
  finally{pulling=false}
 }
@@ -470,7 +574,7 @@ async function renameCategory(id=selected){
 async function deleteCategory(id=selected){
  const c=categories.find(c=>c.id===id);if(!c||c.id==='inbox')return;
  if(!confirm('Delete '+c.name+'? Notes will move to Inbox.'))return;
- try{await api('/category','DELETE',{id:c.id});if(selected===c.id)selected='inbox';await pull(true);renderList(true)}catch(e){alert(e.message)}
+ try{await api('/category','DELETE',{id:c.id});if(selected===c.id){selected='inbox';navigate(viewHash('inbox',archivedView),{replace:true})}await pull(true);renderList(true)}catch(e){alert(e.message)}
 }
 function connectSocket(){
  if(!device||!navigator.onLine)return;
@@ -518,8 +622,11 @@ async function boot(){
  $('loginPage').classList.add('hidden');$('app').classList.remove('hidden');$('deviceButton').textContent=device.name;
  const savedCategories=await setting('categories');if(savedCategories?.length)categories=savedCategories;
  notes=new Map((await getAll('notes')).map(n=>[n.id,n]));
- renderCategories();renderList();status('Local ready');ready=true;
- await pull(true);await flush();connectSocket();if(isDesktop())openEditor(null,false);
+ ready=true;
+ if(!location.hash)history.replaceState({scroll:null},'',location.pathname+location.search+(isQuickApp?'#/new':viewHash('inbox',false)));
+ applyRoute(parseRoute().kind==='new');
+ status('Local ready');
+ await pull(true);await flush();connectSocket();
  if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
 }
 $('loginForm').onsubmit=async e=>{
@@ -532,8 +639,8 @@ $('loginForm').onsubmit=async e=>{
   device=result;await saveSetting('device',result);await boot();
  }catch(e){$('loginError').textContent=e.message}finally{$('loginButton').disabled=false}
 };
-$('quickAdd').onclick=()=>openEditor(null);
-$('desktopNew').onclick=()=>openEditor(null);
+$('quickAdd').onclick=()=>navigate(newHash(selected),{focus:true,preserveScroll:true});
+$('desktopNew').onclick=()=>navigate(newHash(selected),{focus:true,preserveScroll:true});
 $('noteText').addEventListener('input',onText);
 $('archiveButton').onclick=()=>{if(editId)archiveNote(editId)};
 $('archiveButton').title='Archive / restore (Alt+A)';
@@ -541,10 +648,10 @@ $('doneButton').onclick=closeEditor;
 $('renameCategory').onclick=()=>renameCategory();
 $('deleteCategory').onclick=()=>deleteCategory();
 $('searchToggle').onclick=()=>setSearchOpen(!searchOpen);
-$('searchInput').oninput=()=>{if(editing)closeEditor();renderList(true)};
+$('searchInput').oninput=()=>{if(editing&&editId){dismissEditor();navigate(viewHash(),{replace:true,preserveScroll:true})}renderList(true)};
 $('searchInput').addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();if(isDesktop()){$('searchInput').blur()}else setSearchOpen(false)}});
-$('activeTab').onclick=()=>{if(editing)closeEditor();archivedView=false;renderList(true)};
-$('archiveTab').onclick=()=>{if(editing)closeEditor();archivedView=true;renderList(true)};
+$('activeTab').onclick=()=>navigate(viewHash(selected,false));
+$('archiveTab').onclick=()=>navigate(viewHash(selected,true));
 $('deviceButton').onclick=async()=>{
  if(!device)return;
  const name=prompt('Device name',device.name);if(!name?.trim()||name.trim()===device.name)return;
@@ -558,7 +665,7 @@ function moveNote(delta,activate){
  let index=ids.indexOf(editId);
  if(index<0)index=heads.findIndex(h=>h===document.activeElement);
  const next=index<0?(delta>0?0:heads.length-1):(index+delta+heads.length)%heads.length;
- if(activate)openEditor(ids[next]);
+ if(activate)navigate(noteHash(ids[next]),{focus:true,preserveScroll:true});
  else heads[next].focus();
 }
 document.addEventListener('keydown',e=>{
@@ -582,7 +689,7 @@ document.addEventListener('keydown',e=>{
  if(e.altKey&&!e.ctrlKey&&!e.metaKey){
   let handled=true;
   switch(key){
-   case 'n':openEditor(null);break;
+   case 'n':navigate(newHash(selected),{focus:true,preserveScroll:true});break;
    case '1':$('activeTab').click();break;
    case '2':$('archiveTab').click();break;
    case 'c':addCategory();break;
@@ -605,6 +712,33 @@ document.addEventListener('keydown',e=>{
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){flush();pull(false);connectSocket()}else persistChain.then(()=>flush())});
 window.addEventListener('online',()=>{status('Connecting…');flush();pull(true);connectSocket()});
 window.addEventListener('offline',()=>status('Offline · Saved locally'));
+function onHistoryMove(){applyRoute(false);restoreScroll(history.state?.scroll)}
+window.addEventListener('popstate',onHistoryMove);
+window.addEventListener('hashchange',onHistoryMove);
+window.addEventListener('pagehide',()=>{if(ready)history.replaceState({...history.state,scroll:snapshotScroll()},'',location.href)});
+$('appMenuButton').onclick=()=>{
+ const menu=$('appMenu'),opening=menu.classList.contains('hidden');
+ menu.classList.toggle('hidden',!opening);
+ $('appMenuButton').setAttribute('aria-expanded',String(opening));
+};
+$('quickAppAction').href=isQuickApp?'/':'/quick-add';
+$('quickAppAction').textContent=isQuickApp?'Open main MyNote installer':'Open Quick Add installer';
+$('copyViewLink').onclick=async()=>{
+ try{await navigator.clipboard.writeText(location.href);status('View link copied')}
+ catch{status('Unable to copy the link',true)}
+ $('appMenu').classList.add('hidden');
+};
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installPrompt=e});
+$('installAction').onclick=async()=>{
+ if(installPrompt){
+  const p=installPrompt;installPrompt=null;
+  try{await p.prompt();await p.userChoice}catch{}
+ }else if(typeof navigator.install==='function'){
+  try{await navigator.install()}catch{status('Use your browser menu to install this app')}
+ }else status('Use your browser menu to install this app');
+};
+window.addEventListener('appinstalled',()=>{installPrompt=null;status('App installed')});
+document.addEventListener('click',e=>{if(!$('appMenu').classList.contains('hidden')&&!e.target.closest('.app-actions'))$('appMenu').classList.add('hidden')});
 window.addEventListener('scroll',updateSticky,{passive:true});
 window.addEventListener('resize',()=>{updateSticky();if(isDesktop()&&!editing)openEditor(null,false);else positionEditor()});
 setInterval(()=>{if(document.visibilityState==='visible'){flush();pull(false)}},8000);
