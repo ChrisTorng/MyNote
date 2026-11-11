@@ -38,8 +38,8 @@ const mainManifest=JSON.stringify({
   start_url:'/',scope:'/',display:'standalone',display_override:['standalone'],
   background_color:'#1c548c',theme_color:'#111a27',
   icons:[
-    {src:'/icon-192.png',sizes:'192x192',type:'image/png',purpose:'any maskable'},
-    {src:'/icon-512.png',sizes:'512x512',type:'image/png',purpose:'any maskable'}
+    {src:'/icon-192.png',sizes:'192x192',type:'image/png',purpose:'any'},
+    {src:'/icon-512.png',sizes:'512x512',type:'image/png',purpose:'any'}
   ],
   shortcuts:[{
     name:'Quick add note',short_name:'New note',description:'Create a new note immediately',
@@ -51,8 +51,8 @@ const quickManifest=JSON.stringify({
   lang:'en',start_url:'/quick-add#/new',scope:'/quick-add',display:'standalone',
   background_color:'#075961',theme_color:'#075961',
   icons:[
-    {src:'/quick-192.png',sizes:'192x192',type:'image/png',purpose:'any maskable'},
-    {src:'/quick-512.png',sizes:'512x512',type:'image/png',purpose:'any maskable'}
+    {src:'/quick-192.png',sizes:'192x192',type:'image/png',purpose:'any'},
+    {src:'/quick-512.png',sizes:'512x512',type:'image/png',purpose:'any'}
   ]
 });
 function svgIcon(quick=false){
