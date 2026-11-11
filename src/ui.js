@@ -238,7 +238,10 @@ function applyRoute(focus=false){
  }
 }
 function pickCategory(id){
- if(selected===id)return;
+ if(selected===id){
+  if(parseRoute().kind==='note'&&!editorWasNew)navigate(viewHash(id,archivedView));
+  return;
+ }
  if(editing&&editorWasNew&&editId){
   const n=notes.get(editId);
   if(n&&n.originDeviceId===device.deviceId){
@@ -247,7 +250,7 @@ function pickCategory(id){
   }
   selected=id;renderCategories();renderList();return;
  }
- if(editing&&editorWasNew&&!editId){
+ if(editing&&editorWasNew&&!editId&&parseRoute().kind==='new'){
   navigate(newHash(id),{focus:true,preserveScroll:true});return;
  }
  navigate(viewHash(id,archivedView));
