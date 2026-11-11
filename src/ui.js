@@ -621,7 +621,7 @@ async function boot(){
  notes=new Map((await getAll('notes')).map(n=>[n.id,n]));
  ready=true;
  if(!location.hash)history.replaceState({scroll:null},'',location.pathname+location.search+(isQuickApp?'#/new':viewHash('inbox',false)));
- applyRoute(isQuickApp&&parseRoute().kind==='new');
+ applyRoute(parseRoute().kind==='new');
  status('Local ready');
  await pull(true);await flush();connectSocket();
  if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
