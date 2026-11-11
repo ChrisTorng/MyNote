@@ -613,6 +613,7 @@ function showLogin(){
  $('app').classList.add('hidden');$('loginPage').classList.remove('hidden');$('deviceName').value=localStorage.getItem('mynote-device-label')||(/Android/i.test(navigator.userAgent)?'Android phone':'Windows PC');
 }
 async function boot(){
+ if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
  if(!db)db=await openDB();
  try{await navigator.storage?.persist?.()}catch{}
  const cached=await setting('device');
@@ -627,7 +628,6 @@ async function boot(){
  applyRoute(parseRoute().kind==='new');
  status('Local ready');
  await pull(true);await flush();connectSocket();
- if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
 }
 $('loginForm').onsubmit=async e=>{
  e.preventDefault();$('loginButton').disabled=true;$('loginError').textContent='';
