@@ -460,6 +460,8 @@ function renderList(force=false){
   // Preserve the existing Android textarea and its focus while adding or removing
   // cards received from another device. Do not reparent the active card.
   const want=new Set(list.map(n=>n.id));
+  // Remote archive/category changes must not detach a focused mobile editor.
+  if(editId&&notes.has(editId))want.add(editId);
   for(const el of [...root.children]){
    if(el.classList.contains('empty')||el.classList.contains('note')&&!want.has(el.dataset.id))el.remove();
   }
