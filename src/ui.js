@@ -392,66 +392,101 @@ function renderCategories(){
  $('deleteCategory').disabled=selected==='inbox';
  $('renameCategory').disabled=!categories.some(c=>c.id===selected);
 }
+function previewLines(value){
+ const rows=String(value||'').replace(/\r/g,'').split('\n');
+ const first=rows.findIndex(x=>x.trim());
+ if(first<0)return ['',''];
+ return [rows[first],rows.slice(first+1).find(x=>x.trim())||''];
+}
+function updateNoteArticle(article,n){
+ const parts=previewLines(n.content);
+ const title=article.querySelector('.note-title'),excerpt=article.querySelector('.note-excerpt');
+ appendLinkified(title,parts[0]);appendLinkified(excerpt,parts[1]);
+ article.querySelector('.note-main').classList.toggle('has-excerpt',!!parts[1]);
+ article.querySelector('.device-name').textContent=n.originDeviceName||'Unknown';
+ const archive=article.querySelector('.archive-note');
+ archive.textContent=n.archivedAt?'↶':'▣';
+ archive.title=n.archivedAt?'Restore':'Archive';
+ archive.setAttribute('aria-label',n.archivedAt?'Restore note':'Archive note');
+ setDateRow(article.querySelector('.date-created'),n.createdAt,'Created');
+ setDateRow(article.querySelector('.date-edited'),sameMinute(n.createdAt,n.updatedAt)?null:n.updatedAt,'Edited');
+ const metadata=article.querySelector('.note-meta');metadata.replaceChildren();
+ if(n.originDeviceId!==device.deviceId){
+  const ro=document.createElement('span');ro.className='read-only';ro.textContent='Read only';metadata.append(ro);
+ }
+ if($('searchInput').value.trim()){
+  const cat=categories.find(x=>x.id===n.categoryId);
+  if(cat){const name=document.createElement('span');name.textContent=cat.name;metadata.append(name);}
+ }
+}
+function makeNoteArticle(n){
+ const article=document.createElement('article');
+ article.className='note'+(editId===n.id&&editing?' expanded':'');article.dataset.id=n.id;
+ const head=document.createElement('div');head.className='note-head';head.tabIndex=0;
+ head.setAttribute('role','button');head.setAttribute('aria-expanded',String(editId===n.id&&editing));
+ head.title='Open note (Enter)';
+ head.onclick=()=>{if(editing&&editId===n.id){closeEditor();return;}navigate(noteHash(n.id),{focus:true,preserveScroll:true});};
+ head.onkeydown=e=>{if(e.target!==head)return;if(e.key==='Enter'||e.key===' '){e.preventDefault();head.click();}};
+ const main=document.createElement('div');main.className='note-main';
+ const title=document.createElement('div');title.className='note-title';
+ const excerpt=document.createElement('div');excerpt.className='note-excerpt';
+ const metadata=document.createElement('div');metadata.className='note-meta';
+ main.append(title,excerpt,metadata);
+ const side=document.createElement('div');side.className='note-side';
+ const tools=document.createElement('div');tools.className='note-tools';
+ const archive=document.createElement('button');archive.className='icon-btn flat archive-note';archive.type='button';
+ archive.onclick=e=>{e.stopPropagation();archiveNote(n.id)};
+ const del=document.createElement('button');del.className='icon-btn flat delete-note';del.type='button';
+ del.textContent='×';del.title='Delete note';del.setAttribute('aria-label','Delete note');
+ del.onclick=e=>{e.stopPropagation();deleteNote(n.id)};
+ tools.append(archive,del);
+ const origin=document.createElement('div');origin.className='device-name';
+ const dates=document.createElement('div');dates.className='note-dates';
+ const created=document.createElement('div');created.className='date-row date-created';
+ const edited=document.createElement('div');edited.className='date-row date-edited';
+ dates.append(created,edited);side.append(tools,origin,dates);
+ head.append(main,side);article.append(head);
+ const slot=document.createElement('div');slot.className='inline-slot';slot.id='slot-'+n.id;
+ article.append(slot);
+ updateNoteArticle(article,n);
+ return article;
+}
 function renderList(force=false){
  const q=$('searchInput').value.trim().toLowerCase(),c=counts();
  $('activeCount').textContent=c.current;$('archiveCount').textContent=c.archive;
  $('activeTab').classList.toggle('active',!archivedView);$('archiveTab').classList.toggle('active',archivedView);
- // Preserve the editor and keyboard across autosaves, WebSocket events, and polling.
+ const list=[...notes.values()].filter(n=>n.content?.trim()&&(!!n.archivedAt)===archivedView&&(q?searchMatches(n,q):n.categoryId===selected)).sort((a,b)=>b.updatedAt-a.updatedAt);
+ const root=$('noteList');
  if(editing&&!force){
-  if(editId){const n=notes.get(editId);if(n)updateVisibleNote(n)}
+  // Preserve the existing Android textarea and its focus while adding or removing
+  // cards received from another device. Do not reparent the active card.
+  const want=new Set(list.map(n=>n.id));
+  for(const el of [...root.children]){
+   if(el.classList.contains('empty')||el.classList.contains('note')&&!want.has(el.dataset.id))el.remove();
+  }
+  const elements=new Map([...root.children].filter(x=>x.classList.contains('note')).map(x=>[x.dataset.id,x]));
+  for(let i=0;i<list.length;i++){
+   const n=list[i];
+   let el=elements.get(n.id);
+   if(!el){
+    el=makeNoteArticle(n);
+    const next=list.slice(i+1).map(x=>elements.get(x.id)).find(Boolean);
+    root.insertBefore(el,next||null);elements.set(n.id,el);
+   }else updateNoteArticle(el,n);
+  }
+  if(!list.length){const empty=document.createElement('div');empty.className='empty';empty.textContent=q?'No results':archivedView?'No archived notes':'No notes';root.append(empty);}
   return;
  }
- const list=[...notes.values()].filter(n=>(!!n.archivedAt)===archivedView&&(q?searchMatches(n,q):n.categoryId===selected)).sort((a,b)=>b.updatedAt-a.updatedAt);
- const root=$('noteList');
- // Only opening/closing notes or changing views may rebuild the list.
  if(!isDesktop()&&$('expandedEditor').parentElement?.classList.contains('inline-slot')){
   $('expandedEditor').classList.add('hidden');
   $('newEditorHost').append($('expandedEditor'));
  }
  root.replaceChildren();
+ for(const n of list)root.append(makeNoteArticle(n));
  if(!list.length){
   const empty=document.createElement('div');empty.className='empty';
   empty.textContent=q?'No results':archivedView?'No archived notes':'No notes';
   root.append(empty);
- }
- for(const n of list){
-  const article=document.createElement('article');
-  article.className='note'+(editId===n.id&&editing?' expanded':'');article.dataset.id=n.id;
-  const head=document.createElement('div');head.className='note-head';head.tabIndex=0;head.setAttribute('role','button');
-  head.setAttribute('aria-expanded',String(editId===n.id&&editing));
-  head.title='Open note (Enter)';
-  head.onclick=()=>{if(editing&&editId===n.id){closeEditor();return}navigate(noteHash(n.id),{focus:true,preserveScroll:true})};
-  head.onkeydown=e=>{if(e.target!==head)return;if(e.key==='Enter'||e.key===' '){e.preventDefault();head.click()}};
-  const main=document.createElement('div');main.className='note-main';
-  const line=document.createElement('div');line.className='note-line';
-  const title=document.createElement('div');title.className='note-title';title.textContent=firstLines(n.content)[0];
-  const tools=document.createElement('div');tools.className='note-tools';
-  const archive=document.createElement('button');archive.className='icon-btn flat';archive.type='button';
-  archive.title=(n.archivedAt?'Restore':'Archive')+' (Alt+A)';
-  archive.setAttribute('aria-label',n.archivedAt?'Restore note':'Archive note');
-  archive.textContent=n.archivedAt?'↶':'▣';
-  archive.onclick=e=>{e.stopPropagation();archiveNote(n.id)};tools.append(archive);
-  line.append(title,tools);
-  const excerpt=document.createElement('div');excerpt.className='note-excerpt';excerpt.textContent=firstLines(n.content)[1];
-  const metadata=document.createElement('div');metadata.className='note-meta';
-  const origin=document.createElement('span');origin.className='origin';origin.textContent=n.originDeviceName||'Unknown';
-  const mobileTimes=document.createElement('span');mobileTimes.className='mobile-times';mobileTimes.textContent=metaText(n);
-  metadata.append(origin,mobileTimes);
-  if(n.originDeviceId!==device.deviceId){
-   const ro=document.createElement('span');ro.className='read-only';ro.textContent='Read only';metadata.append(ro);
-  }
-  if(q){const cat=categories.find(x=>x.id===n.categoryId);if(cat){
-   const catName=document.createElement('span');catName.textContent=cat.name;metadata.append(catName);
-  }}
-  main.append(line,excerpt,metadata);
-  const dates=document.createElement('div');dates.className='note-dates';
-  const created=document.createElement('div');created.className='date-created';created.textContent='Created '+stamp(n.createdAt);
-  const edited=document.createElement('div');edited.className='date-edited';
-  edited.textContent=sameMinute(n.createdAt,n.updatedAt)?'':'Edited '+stamp(n.updatedAt,!sameDay(n.createdAt,n.updatedAt));
-  dates.append(created,edited);
-  head.append(main,dates);article.append(head);
-  const slot=document.createElement('div');slot.className='inline-slot';slot.id='slot-'+n.id;
-  article.append(slot);root.append(article);
  }
  positionEditor();
 }
@@ -509,15 +544,7 @@ function openEditor(id=null,focus=true){
 }
 function updateVisibleNote(n){
  const el=[...document.querySelectorAll('.note')].find(x=>x.dataset.id===n.id);
- if(!el)return;
- const first=firstLines(n.content);
- const title=el.querySelector('.note-title'),excerpt=el.querySelector('.note-excerpt');
- if(title)title.textContent=first[0];
- if(excerpt)excerpt.textContent=first[1];
- const mobile=el.querySelector('.mobile-times');if(mobile)mobile.textContent=metaText(n);
- const created=el.querySelector('.date-created');if(created)created.textContent='Created '+stamp(n.createdAt);
- const edited=el.querySelector('.date-edited');
- if(edited)edited.textContent=sameMinute(n.createdAt,n.updatedAt)?'':'Edited '+stamp(n.updatedAt,!sameDay(n.createdAt,n.updatedAt));
+ if(el)updateNoteArticle(el,n);
 }
 function persistNote(note,archive=false){
  const snapshot={...note};
