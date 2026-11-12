@@ -113,6 +113,36 @@ export const HTML = String.raw`<!doctype html>
  .note-meta{margin-top:3px}
  .inline-slot{padding:0 8px 7px}
 }
+
+/* Responsive note preview; controls and device label occupy the right column. */
+.note-head{display:grid;grid-template-columns:minmax(0,1fr) max-content;align-items:start;gap:8px}
+.note-main{min-width:0}
+.note-title{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;overflow-wrap:anywhere;mask-image:none;-webkit-mask-image:none;line-height:1.45}
+.note-main.has-excerpt .note-title{-webkit-line-clamp:1;line-clamp:1}
+.note-excerpt{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1;line-clamp:1;overflow:hidden;overflow-wrap:anywhere;mask-image:none;-webkit-mask-image:none;height:auto}
+.note-excerpt:empty{display:none}
+.note-side{display:flex;flex-direction:column;align-items:flex-end;gap:1px;min-width:0}
+.note-tools{justify-content:flex-end}
+.note-tools .icon-btn{width:25px}
+.note-tools .delete-note{color:var(--danger)}
+.device-name{font-size:11px;color:var(--primary);text-align:right;overflow-wrap:anywhere;max-width:100%}
+.note-dates{display:flex;flex-direction:column;gap:1px;min-width:0;line-height:1.4;margin-top:2px}
+.date-row{display:grid;grid-template-columns:max-content 43px;gap:6px;align-items:baseline}
+.date-value{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.date-label{text-align:left;white-space:nowrap}
+.note-meta{margin-top:3px}
+.note a,.editor a{color:var(--primary);text-decoration:underline;text-underline-offset:2px;overflow-wrap:anywhere}
+.read-only-full{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;line-height:1.5;max-height:none;margin:4px 0 10px}
+.editor-links{display:flex;flex-wrap:wrap;gap:4px 10px;border-top:1px solid var(--line);padding-top:6px;margin-top:4px;font-size:12px}
+.editor-links a{max-width:100%;overflow-wrap:anywhere}
+#editorMeta{white-space:pre-line}
+@media(max-width:960px){
+ .note-head{display:grid;grid-template-columns:minmax(0,1fr) max-content;gap:5px}
+ .note-dates{display:flex;font-size:9.5px}
+ .note-tools .icon-btn{width:23px}
+ .date-row{grid-template-columns:max-content 40px;gap:4px}
+ .note-meta .mobile-times{display:none}
+}
 </style>
 </head>
 <body>
@@ -151,8 +181,8 @@ export const HTML = String.raw`<!doctype html>
 <div id="expandedEditor" class="editor hidden">
 <div class="editor-top"><span id="editorMeta"></span><span id="editorType"></span></div>
 <textarea id="noteText" placeholder="Type here…"></textarea>
-<pre id="readOnlyFull" class="hidden"></pre>
-<div class="editor-actions"><span id="editorStatus" class="editor-status"></span><button id="archiveButton" class="btn hidden">Archive</button><button id="doneButton" class="btn primary" title="Close (Esc / Ctrl+Enter)">Close</button></div>
+<div id="readOnlyFull" class="read-only-full hidden"></div><div id="editorLinks" class="editor-links hidden"></div>
+<div class="editor-actions"><span id="editorStatus" class="editor-status"></span><button id="deleteNoteButton" class="btn danger hidden">Delete</button><button id="archiveButton" class="btn hidden">Archive</button><button id="doneButton" class="btn primary" title="Close (Esc / Ctrl+Enter)">Close</button></div>
 </div>
 </div>
 <script nonce="__NONCE__">
@@ -256,7 +286,7 @@ function pickCategory(id){
  navigate(viewHash(id,archivedView));
 }
 
-function openDB(){return new Promise((resolve,reject)=>{const r=indexedDB.open('mynote-local-v1',2);r.onupgradeneeded=()=>{const d=r.result;if(!d.objectStoreNames.contains('notes'))d.createObjectStore('notes',{keyPath:'id'});if(!d.objectStoreNames.contains('outbox'))d.createObjectStore('outbox',{keyPath:'id'});if(!d.objectStoreNames.contains('settings'))d.createObjectStore('settings',{keyPath:'key'});if(!d.objectStoreNames.contains('archiveOutbox'))d.createObjectStore('archiveOutbox',{keyPath:'id'})};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
+function openDB(){return new Promise((resolve,reject)=>{const r=indexedDB.open('mynote-local-v1',3);r.onupgradeneeded=()=>{const d=r.result;if(!d.objectStoreNames.contains('notes'))d.createObjectStore('notes',{keyPath:'id'});if(!d.objectStoreNames.contains('outbox'))d.createObjectStore('outbox',{keyPath:'id'});if(!d.objectStoreNames.contains('settings'))d.createObjectStore('settings',{keyPath:'key'});if(!d.objectStoreNames.contains('archiveOutbox'))d.createObjectStore('archiveOutbox',{keyPath:'id'});if(!d.objectStoreNames.contains('deleteOutbox'))d.createObjectStore('deleteOutbox',{keyPath:'id'})};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
 function req(r){return new Promise((resolve,reject)=>{r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
 function done(t){return new Promise((resolve,reject)=>{t.oncomplete=resolve;t.onerror=()=>reject(t.error);t.onabort=()=>reject(t.error||Error('Transaction aborted'))})}
 function tx(names,mode='readonly'){try{return db.transaction(names,mode,{durability:'strict'})}catch{return db.transaction(names,mode)}}
@@ -268,12 +298,53 @@ function sameDay(a,b){return new Date(a).toDateString()===new Date(b).toDateStri
 function sameMinute(a,b){return Math.floor(a/60000)===Math.floor(b/60000)}
 function stamp(ts,withDate=true){
  if(!ts)return '';
- const d=new Date(ts),time=d.getHours()+':'+d.getMinutes();
+ const d=new Date(ts),time=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
  if(!withDate)return time;
  const year=d.getFullYear()!==new Date().getFullYear()?d.getFullYear()+'/':'';
- return year+(d.getMonth()+1)+'/'+d.getDate()+'('+WEEK[d.getDay()]+') '+time;
+ return year+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0')+' ('+WEEK[d.getDay()]+') '+time;
 }
-function metaText(n){let s='Created '+stamp(n.createdAt);if(!sameMinute(n.createdAt,n.updatedAt))s+=' · Edited '+stamp(n.updatedAt,!sameDay(n.createdAt,n.updatedAt));return s}
+function metaText(n){
+ let s=stamp(n.createdAt)+' Created';
+ if(!sameMinute(n.createdAt,n.updatedAt))s+='\n'+stamp(n.updatedAt)+' Edited';
+ return s;
+}
+function setDateRow(row,ts,label){
+ row.replaceChildren();
+ if(!ts){row.classList.add('hidden');return;}
+ row.classList.remove('hidden');
+ const date=document.createElement('span');date.className='date-value';date.textContent=stamp(ts);
+ const name=document.createElement('span');name.className='date-label';name.textContent=label;
+ row.append(date,name);
+}
+function appendLinkified(element,text){
+ element.replaceChildren();
+ const source=String(text||''),rx=/https?:\/\/[^\s<>"']+/gi;
+ let pos=0,match;
+ while((match=rx.exec(source))){
+  const candidate=match[0],value=candidate.replace(/[.,;:!?)}\]]+$/,'');
+  let href=null;
+  try{const url=new URL(value);if(['https:','http:'].includes(url.protocol))href=url.href}catch{}
+  if(!href)continue;
+  if(match.index>pos)element.append(document.createTextNode(source.slice(pos,match.index)));
+  const link=document.createElement('a');link.href=href;link.textContent=value;
+  link.target='_blank';link.rel='noopener noreferrer';link.referrerPolicy='no-referrer';
+  link.onclick=e=>e.stopPropagation();
+  element.append(link);
+  pos=match.index+value.length;
+  if(candidate.length>value.length)rx.lastIndex=pos;
+ }
+ element.append(document.createTextNode(source.slice(pos)));
+}
+function updateEditorLinks(content){
+ const node=$('editorLinks');node.replaceChildren();
+ const rx=/https?:\/\/[^\s<>"']+/gi;
+ const found=[...new Set(String(content||'').match(rx)||[])];
+ for(const value of found){
+  const line=document.createElement('span');appendLinkified(line,value);
+  if(line.querySelector('a'))node.append(line);
+ }
+ node.classList.toggle('hidden',node.childElementCount===0);
+}
 function dateTokens(ts){
  if(!ts)return '';
  const d=new Date(ts),y=d.getFullYear(),m=d.getMonth()+1,day=d.getDate(),w=WEEK[d.getDay()];
