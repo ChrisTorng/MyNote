@@ -735,7 +735,7 @@ async function archiveNote(id){
  const next={...n,archivedAt:n.archivedAt?null:Date.now()};
  notes.set(id,next);persistNote(next,true);
  if(editing&&editId===id)closeEditor();
- renderCategories();renderList(true);
+ renderCategories();renderList();
 }
 async function addCategory(){
  const name=prompt('Category name');if(!name?.trim())return;
