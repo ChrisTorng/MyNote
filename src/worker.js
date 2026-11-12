@@ -167,6 +167,8 @@ export default {
         internal = '/internal/state?version=' + encodeURIComponent(url.searchParams.get('version') || '0');
       } else if (path === '/api/note' && method === 'PUT') {
         internal = '/internal/note'; body = { ...await request.json(), device };
+      } else if (path === '/api/note' && method === 'DELETE') {
+        internal = '/internal/note'; body = await request.json();
       } else if (path === '/api/archive' && method === 'PATCH') {
         internal = '/internal/archive'; body = { ...await request.json(), device };
       } else if (path === '/api/category' && ['POST','PATCH','DELETE'].includes(method)) {
@@ -195,6 +197,7 @@ export class MyNoteStore extends DurableObject {
     sql.exec("CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, sort_order INTEGER NOT NULL)");
     sql.exec("CREATE TABLE IF NOT EXISTS notes (id TEXT PRIMARY KEY, category_id TEXT NOT NULL, content TEXT NOT NULL, origin_device_id TEXT NOT NULL, origin_device_name TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, archived_at INTEGER, revision INTEGER NOT NULL)");
     sql.exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL)");
+    sql.exec("CREATE TABLE IF NOT EXISTS deleted_notes (id TEXT PRIMARY KEY, deleted_at INTEGER NOT NULL)");
     sql.exec("INSERT OR IGNORE INTO meta(key,value) VALUES ('version',1)");
     sql.exec("INSERT OR IGNORE INTO categories(id,name,created_at,updated_at,sort_order) VALUES ('inbox','Inbox',0,0,0)");
     sql.exec("UPDATE categories SET name='Inbox' WHERE id='inbox' AND name='隨手記'");
@@ -254,7 +257,8 @@ export class MyNoteStore extends DurableObject {
         return json({
           version:v,
           categories:sql.exec('SELECT id,name,created_at AS createdAt,updated_at AS updatedAt FROM categories ORDER BY sort_order,created_at').toArray(),
-          notes:sql.exec('SELECT id,category_id AS categoryId,content,origin_device_id AS originDeviceId,origin_device_name AS originDeviceName,created_at AS createdAt,updated_at AS updatedAt,archived_at AS archivedAt,revision FROM notes ORDER BY updated_at DESC').toArray()
+          notes:sql.exec('SELECT id,category_id AS categoryId,content,origin_device_id AS originDeviceId,origin_device_name AS originDeviceName,created_at AS createdAt,updated_at AS updatedAt,archived_at AS archivedAt,revision FROM notes ORDER BY updated_at DESC').toArray(),
+          deletedIds:sql.exec('SELECT id FROM deleted_notes').toArray().map(x=>x.id)
         });
       }
       if (path === '/internal/device' && method === 'PATCH') {
@@ -296,6 +300,20 @@ export class MyNoteStore extends DurableObject {
         this.changed();
         return json({ ok:true, archivedAt, version:this.version() });
       }
+      if (path === '/internal/note' && method === 'DELETE') {
+        const id = String(body.id || '');
+        if (!/^[\w-]{8,80}$/.test(id)) return fail('Invalid note ID');
+        const present = sql.exec('SELECT id FROM notes WHERE id=?',id).toArray().length;
+        const already = sql.exec('SELECT id FROM deleted_notes WHERE id=?',id).toArray().length;
+        if (!already || present) {
+          this.ctx.storage.transactionSync(() => {
+            sql.exec('DELETE FROM notes WHERE id=?',id);
+            sql.exec('INSERT OR IGNORE INTO deleted_notes(id,deleted_at) VALUES(?,?)',id,Date.now());
+          });
+          this.changed();
+        }
+        return json({ok:true,version:this.version()});
+      }
       if (path === '/internal/note' && method === 'PUT') {
         const device = body.device;
         const id = String(body.id || '');
@@ -303,6 +321,8 @@ export class MyNoteStore extends DurableObject {
         const revision = Number(body.revision);
         if (!/^[\w-]{8,80}$/.test(id) || content.length>200000 || !Number.isSafeInteger(revision) || revision<1)
           return fail('Invalid note');
+        if (sql.exec('SELECT id FROM deleted_notes WHERE id=?',id).toArray().length) return fail('This note was deleted',410);
+        if (!content.trim()) return fail('Blank notes must be deleted',422);
         const existing = sql.exec('SELECT origin_device_id AS owner, revision, content FROM notes WHERE id=?',id).toArray()[0];
         if (existing && existing.owner !== device.deviceId) return fail('Only the creating device may edit this note',403);
         if (existing && revision <= existing.revision) {

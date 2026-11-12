@@ -113,6 +113,36 @@ export const HTML = String.raw`<!doctype html>
  .note-meta{margin-top:3px}
  .inline-slot{padding:0 8px 7px}
 }
+
+/* Responsive note preview; controls and device label occupy the right column. */
+.note-head{display:grid;grid-template-columns:minmax(0,1fr) max-content;align-items:start;gap:8px}
+.note-main{min-width:0}
+.note-title{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;overflow-wrap:anywhere;mask-image:none;-webkit-mask-image:none;line-height:1.45}
+.note-main.has-excerpt .note-title{-webkit-line-clamp:1;line-clamp:1}
+.note-excerpt{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1;line-clamp:1;overflow:hidden;overflow-wrap:anywhere;mask-image:none;-webkit-mask-image:none;height:auto}
+.note-excerpt:empty{display:none}
+.note-side{display:flex;flex-direction:column;align-items:flex-end;gap:1px;min-width:0}
+.note-tools{justify-content:flex-end}
+.note-tools .icon-btn{width:25px}
+.note-tools .delete-note{color:var(--danger)}
+.device-name{font-size:11px;color:var(--primary);text-align:right;overflow-wrap:anywhere;max-width:100%}
+.note-dates{display:grid;grid-template-columns:max-content 43px;column-gap:6px;row-gap:1px;align-items:baseline;min-width:0;line-height:1.4;margin-top:2px}
+.date-row{display:contents}
+.date-value{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.date-label{text-align:left;white-space:nowrap}
+.note-meta{margin-top:3px}
+.note a,.editor a{color:var(--primary);text-decoration:underline;text-underline-offset:2px;overflow-wrap:anywhere}
+.read-only-full{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;line-height:1.5;max-height:none;margin:4px 0 10px}
+.editor-links{display:flex;flex-wrap:wrap;gap:4px 10px;border-top:1px solid var(--line);padding-top:6px;margin-top:4px;font-size:12px}
+.editor-links a{max-width:100%;overflow-wrap:anywhere}
+#editorMeta{white-space:pre-line}
+@media(max-width:960px){
+ .note-head{display:grid;grid-template-columns:minmax(0,1fr) max-content;gap:5px}
+ .note-dates{display:grid;grid-template-columns:max-content 40px;font-size:9.5px}
+ .note-tools .icon-btn{width:23px}
+ .note-dates{column-gap:4px}
+ .note-meta .mobile-times{display:none}
+}
 </style>
 </head>
 <body>
@@ -151,8 +181,8 @@ export const HTML = String.raw`<!doctype html>
 <div id="expandedEditor" class="editor hidden">
 <div class="editor-top"><span id="editorMeta"></span><span id="editorType"></span></div>
 <textarea id="noteText" placeholder="Type here…"></textarea>
-<pre id="readOnlyFull" class="hidden"></pre>
-<div class="editor-actions"><span id="editorStatus" class="editor-status"></span><button id="archiveButton" class="btn hidden">Archive</button><button id="doneButton" class="btn primary" title="Close (Esc / Ctrl+Enter)">Close</button></div>
+<div id="readOnlyFull" class="read-only-full hidden"></div><div id="editorLinks" class="editor-links hidden"></div>
+<div class="editor-actions"><span id="editorStatus" class="editor-status"></span><button id="deleteNoteButton" class="btn danger hidden">Delete</button><button id="archiveButton" class="btn hidden">Archive</button><button id="doneButton" class="btn primary" title="Close (Esc / Ctrl+Enter)">Close</button></div>
 </div>
 </div>
 <script nonce="__NONCE__">
@@ -162,7 +192,7 @@ const $=id=>document.getElementById(id);
 const isDesktop=()=>window.matchMedia('(min-width:961px)').matches;
 const dayMs=86400000;
 let db=null,device=null,categories=[{id:'inbox',name:'Inbox'}],notes=new Map(),remoteVersion=0,selected='inbox',archivedView=false,editId=null,editing=false,editingDraft=false,persistChain=Promise.resolve(),syncing=false,pulling=false,socket=null,reconnectTimer,searchOpen=false,ready=false;
-let syncTimer, resendNeeded=false, localSaveError=null, editorWasNew=false, installPrompt=null;
+let syncTimer, resendNeeded=false, repullNeeded=false, localSaveError=null, editorWasNew=false, installPrompt=null;
 const isQuickApp=location.pathname==='/quick-add';
 const WEEK=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 function status(message,error=false){$('saveStatus').textContent=message;$('saveStatus').title=message;$('saveStatus').classList.toggle('error',error);$('editorStatus').textContent=editing&&editId&&notes.get(editId)?.originDeviceId===device?.deviceId?message:'';}
@@ -256,7 +286,7 @@ function pickCategory(id){
  navigate(viewHash(id,archivedView));
 }
 
-function openDB(){return new Promise((resolve,reject)=>{const r=indexedDB.open('mynote-local-v1',2);r.onupgradeneeded=()=>{const d=r.result;if(!d.objectStoreNames.contains('notes'))d.createObjectStore('notes',{keyPath:'id'});if(!d.objectStoreNames.contains('outbox'))d.createObjectStore('outbox',{keyPath:'id'});if(!d.objectStoreNames.contains('settings'))d.createObjectStore('settings',{keyPath:'key'});if(!d.objectStoreNames.contains('archiveOutbox'))d.createObjectStore('archiveOutbox',{keyPath:'id'})};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
+function openDB(){return new Promise((resolve,reject)=>{const r=indexedDB.open('mynote-local-v1',3);r.onupgradeneeded=()=>{const d=r.result;if(!d.objectStoreNames.contains('notes'))d.createObjectStore('notes',{keyPath:'id'});if(!d.objectStoreNames.contains('outbox'))d.createObjectStore('outbox',{keyPath:'id'});if(!d.objectStoreNames.contains('settings'))d.createObjectStore('settings',{keyPath:'key'});if(!d.objectStoreNames.contains('archiveOutbox'))d.createObjectStore('archiveOutbox',{keyPath:'id'});if(!d.objectStoreNames.contains('deleteOutbox'))d.createObjectStore('deleteOutbox',{keyPath:'id'})};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
 function req(r){return new Promise((resolve,reject)=>{r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
 function done(t){return new Promise((resolve,reject)=>{t.oncomplete=resolve;t.onerror=()=>reject(t.error);t.onabort=()=>reject(t.error||Error('Transaction aborted'))})}
 function tx(names,mode='readonly'){try{return db.transaction(names,mode,{durability:'strict'})}catch{return db.transaction(names,mode)}}
@@ -268,12 +298,53 @@ function sameDay(a,b){return new Date(a).toDateString()===new Date(b).toDateStri
 function sameMinute(a,b){return Math.floor(a/60000)===Math.floor(b/60000)}
 function stamp(ts,withDate=true){
  if(!ts)return '';
- const d=new Date(ts),time=d.getHours()+':'+d.getMinutes();
+ const d=new Date(ts),time=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
  if(!withDate)return time;
  const year=d.getFullYear()!==new Date().getFullYear()?d.getFullYear()+'/':'';
- return year+(d.getMonth()+1)+'/'+d.getDate()+'('+WEEK[d.getDay()]+') '+time;
+ return year+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0')+' ('+WEEK[d.getDay()]+') '+time;
 }
-function metaText(n){let s='Created '+stamp(n.createdAt);if(!sameMinute(n.createdAt,n.updatedAt))s+=' · Edited '+stamp(n.updatedAt,!sameDay(n.createdAt,n.updatedAt));return s}
+function metaText(n){
+ let s=stamp(n.createdAt)+' Created';
+ if(!sameMinute(n.createdAt,n.updatedAt))s+='\n'+stamp(n.updatedAt)+' Edited';
+ return s;
+}
+function setDateRow(row,ts,label){
+ row.replaceChildren();
+ if(!ts){row.classList.add('hidden');return;}
+ row.classList.remove('hidden');
+ const date=document.createElement('span');date.className='date-value';date.textContent=stamp(ts);
+ const name=document.createElement('span');name.className='date-label';name.textContent=label;
+ row.append(date,name);
+}
+function appendLinkified(element,text){
+ element.replaceChildren();
+ const source=String(text||''),rx=/https?:\/\/[^\s<>"']+/gi;
+ let pos=0,match;
+ while((match=rx.exec(source))){
+  const candidate=match[0],value=candidate.replace(/[.,;:!?)}\]]+$/,'');
+  let href=null;
+  try{const url=new URL(value);if(['https:','http:'].includes(url.protocol))href=url.href}catch{}
+  if(!href)continue;
+  if(match.index>pos)element.append(document.createTextNode(source.slice(pos,match.index)));
+  const link=document.createElement('a');link.href=href;link.textContent=value;
+  link.target='_blank';link.rel='noopener noreferrer';link.referrerPolicy='no-referrer';
+  link.onclick=e=>e.stopPropagation();
+  element.append(link);
+  pos=match.index+value.length;
+  if(candidate.length>value.length)rx.lastIndex=pos;
+ }
+ element.append(document.createTextNode(source.slice(pos)));
+}
+function updateEditorLinks(content){
+ const node=$('editorLinks');node.replaceChildren();
+ const rx=/https?:\/\/[^\s<>"']+/gi;
+ const found=[...new Set(String(content||'').match(rx)||[])];
+ for(const value of found){
+  const line=document.createElement('span');appendLinkified(line,value);
+  if(line.querySelector('a'))node.append(line);
+ }
+ node.classList.toggle('hidden',node.childElementCount===0);
+}
 function dateTokens(ts){
  if(!ts)return '';
  const d=new Date(ts),y=d.getFullYear(),m=d.getMonth()+1,day=d.getDate(),w=WEEK[d.getDay()];
@@ -281,7 +352,6 @@ function dateTokens(ts){
  return [stamp(ts),y+'/'+m+'/'+day,y+'/'+mm+'/'+dd,y+'-'+mm+'-'+dd,m+'/'+day,mm+'/'+dd,m+'/'+dd,mm+'/'+day,m+'-'+day,m+'.'+day,y+'年'+m+'月'+day+'日',w,d.getHours()+':'+d.getMinutes()].join(' ').toLowerCase();
 }
 function searchMatches(n,q){if(!q)return true;return (n.content+' '+n.originDeviceName+' '+dateTokens(n.createdAt)+' '+dateTokens(n.updatedAt)).toLowerCase().includes(q)}
-function firstLines(value){const a=String(value||'').replace(/\r/g,'').split('\n');return [a[0]||'(Untitled)',a[1]||'']}
 function counts(){
  const q=$('searchInput').value.trim().toLowerCase();
  const filtered=[...notes.values()].filter(n=>searchMatches(n,q)&&(q||n.categoryId===selected));
@@ -321,66 +391,103 @@ function renderCategories(){
  $('deleteCategory').disabled=selected==='inbox';
  $('renameCategory').disabled=!categories.some(c=>c.id===selected);
 }
+function previewLines(value){
+ const rows=String(value||'').replace(/\r/g,'').split('\n');
+ const first=rows.findIndex(x=>x.trim());
+ if(first<0)return ['',''];
+ return [rows[first],rows.slice(first+1).find(x=>x.trim())||''];
+}
+function updateNoteArticle(article,n){
+ const parts=previewLines(n.content);
+ const title=article.querySelector('.note-title'),excerpt=article.querySelector('.note-excerpt');
+ appendLinkified(title,parts[0]);appendLinkified(excerpt,parts[1]);
+ article.querySelector('.note-main').classList.toggle('has-excerpt',!!parts[1]);
+ article.querySelector('.device-name').textContent=n.originDeviceName||'Unknown';
+ const archive=article.querySelector('.archive-note');
+ archive.textContent=n.archivedAt?'↶':'▣';
+ archive.title=n.archivedAt?'Restore':'Archive';
+ archive.setAttribute('aria-label',n.archivedAt?'Restore note':'Archive note');
+ setDateRow(article.querySelector('.date-created'),n.createdAt,'Created');
+ setDateRow(article.querySelector('.date-edited'),sameMinute(n.createdAt,n.updatedAt)?null:n.updatedAt,'Edited');
+ const metadata=article.querySelector('.note-meta');metadata.replaceChildren();
+ if(n.originDeviceId!==device.deviceId){
+  const ro=document.createElement('span');ro.className='read-only';ro.textContent='Read only';metadata.append(ro);
+ }
+ if($('searchInput').value.trim()){
+  const cat=categories.find(x=>x.id===n.categoryId);
+  if(cat){const name=document.createElement('span');name.textContent=cat.name;metadata.append(name);}
+ }
+}
+function makeNoteArticle(n){
+ const article=document.createElement('article');
+ article.className='note'+(editId===n.id&&editing?' expanded':'');article.dataset.id=n.id;
+ const head=document.createElement('div');head.className='note-head';head.tabIndex=0;
+ head.setAttribute('role','button');head.setAttribute('aria-expanded',String(editId===n.id&&editing));
+ head.title='Open note (Enter)';
+ head.onclick=()=>{if(editing&&editId===n.id){closeEditor();return;}navigate(noteHash(n.id),{focus:true,preserveScroll:true});};
+ head.onkeydown=e=>{if(e.target!==head)return;if(e.key==='Enter'||e.key===' '){e.preventDefault();head.click();}};
+ const main=document.createElement('div');main.className='note-main';
+ const title=document.createElement('div');title.className='note-title';
+ const excerpt=document.createElement('div');excerpt.className='note-excerpt';
+ const metadata=document.createElement('div');metadata.className='note-meta';
+ main.append(title,excerpt,metadata);
+ const side=document.createElement('div');side.className='note-side';
+ const tools=document.createElement('div');tools.className='note-tools';
+ const archive=document.createElement('button');archive.className='icon-btn flat archive-note';archive.type='button';
+ archive.onclick=e=>{e.stopPropagation();archiveNote(n.id)};
+ const del=document.createElement('button');del.className='icon-btn flat delete-note';del.type='button';
+ del.textContent='×';del.title='Delete note';del.setAttribute('aria-label','Delete note');
+ del.onclick=e=>{e.stopPropagation();deleteNote(n.id)};
+ tools.append(archive,del);
+ const origin=document.createElement('div');origin.className='device-name';
+ const dates=document.createElement('div');dates.className='note-dates';
+ const created=document.createElement('div');created.className='date-row date-created';
+ const edited=document.createElement('div');edited.className='date-row date-edited';
+ dates.append(created,edited);side.append(tools,origin,dates);
+ head.append(main,side);article.append(head);
+ const slot=document.createElement('div');slot.className='inline-slot';slot.id='slot-'+n.id;
+ article.append(slot);
+ updateNoteArticle(article,n);
+ return article;
+}
 function renderList(force=false){
  const q=$('searchInput').value.trim().toLowerCase(),c=counts();
  $('activeCount').textContent=c.current;$('archiveCount').textContent=c.archive;
  $('activeTab').classList.toggle('active',!archivedView);$('archiveTab').classList.toggle('active',archivedView);
- // Preserve the editor and keyboard across autosaves, WebSocket events, and polling.
+ const list=[...notes.values()].filter(n=>n.content?.trim()&&(!!n.archivedAt)===archivedView&&(q?searchMatches(n,q):n.categoryId===selected)).sort((a,b)=>b.updatedAt-a.updatedAt);
+ const root=$('noteList');
  if(editing&&!force){
-  if(editId){const n=notes.get(editId);if(n)updateVisibleNote(n)}
+  // Preserve the existing Android textarea and its focus while adding or removing
+  // cards received from another device. Do not reparent the active card.
+  const want=new Set(list.map(n=>n.id));
+  // Remote archive/category changes must not detach a focused mobile editor.
+  if(editId&&notes.has(editId))want.add(editId);
+  for(const el of [...root.children]){
+   if(el.classList.contains('empty')||el.classList.contains('note')&&!want.has(el.dataset.id))el.remove();
+  }
+  const elements=new Map([...root.children].filter(x=>x.classList.contains('note')).map(x=>[x.dataset.id,x]));
+  for(let i=0;i<list.length;i++){
+   const n=list[i];
+   let el=elements.get(n.id);
+   if(!el){
+    el=makeNoteArticle(n);
+    const next=list.slice(i+1).map(x=>elements.get(x.id)).find(Boolean);
+    root.insertBefore(el,next||null);elements.set(n.id,el);
+   }else updateNoteArticle(el,n);
+  }
+  if(!list.length){const empty=document.createElement('div');empty.className='empty';empty.textContent=q?'No results':archivedView?'No archived notes':'No notes';root.append(empty);}
   return;
  }
- const list=[...notes.values()].filter(n=>(!!n.archivedAt)===archivedView&&(q?searchMatches(n,q):n.categoryId===selected)).sort((a,b)=>b.updatedAt-a.updatedAt);
- const root=$('noteList');
- // Only opening/closing notes or changing views may rebuild the list.
  if(!isDesktop()&&$('expandedEditor').parentElement?.classList.contains('inline-slot')){
   $('expandedEditor').classList.add('hidden');
   $('newEditorHost').append($('expandedEditor'));
  }
  root.replaceChildren();
+ for(const n of list)root.append(makeNoteArticle(n));
  if(!list.length){
   const empty=document.createElement('div');empty.className='empty';
   empty.textContent=q?'No results':archivedView?'No archived notes':'No notes';
   root.append(empty);
- }
- for(const n of list){
-  const article=document.createElement('article');
-  article.className='note'+(editId===n.id&&editing?' expanded':'');article.dataset.id=n.id;
-  const head=document.createElement('div');head.className='note-head';head.tabIndex=0;head.setAttribute('role','button');
-  head.setAttribute('aria-expanded',String(editId===n.id&&editing));
-  head.title='Open note (Enter)';
-  head.onclick=()=>{if(editing&&editId===n.id){closeEditor();return}navigate(noteHash(n.id),{focus:true,preserveScroll:true})};
-  head.onkeydown=e=>{if(e.target!==head)return;if(e.key==='Enter'||e.key===' '){e.preventDefault();head.click()}};
-  const main=document.createElement('div');main.className='note-main';
-  const line=document.createElement('div');line.className='note-line';
-  const title=document.createElement('div');title.className='note-title';title.textContent=firstLines(n.content)[0];
-  const tools=document.createElement('div');tools.className='note-tools';
-  const archive=document.createElement('button');archive.className='icon-btn flat';archive.type='button';
-  archive.title=(n.archivedAt?'Restore':'Archive')+' (Alt+A)';
-  archive.setAttribute('aria-label',n.archivedAt?'Restore note':'Archive note');
-  archive.textContent=n.archivedAt?'↶':'▣';
-  archive.onclick=e=>{e.stopPropagation();archiveNote(n.id)};tools.append(archive);
-  line.append(title,tools);
-  const excerpt=document.createElement('div');excerpt.className='note-excerpt';excerpt.textContent=firstLines(n.content)[1];
-  const metadata=document.createElement('div');metadata.className='note-meta';
-  const origin=document.createElement('span');origin.className='origin';origin.textContent=n.originDeviceName||'Unknown';
-  const mobileTimes=document.createElement('span');mobileTimes.className='mobile-times';mobileTimes.textContent=metaText(n);
-  metadata.append(origin,mobileTimes);
-  if(n.originDeviceId!==device.deviceId){
-   const ro=document.createElement('span');ro.className='read-only';ro.textContent='Read only';metadata.append(ro);
-  }
-  if(q){const cat=categories.find(x=>x.id===n.categoryId);if(cat){
-   const catName=document.createElement('span');catName.textContent=cat.name;metadata.append(catName);
-  }}
-  main.append(line,excerpt,metadata);
-  const dates=document.createElement('div');dates.className='note-dates';
-  const created=document.createElement('div');created.className='date-created';created.textContent='Created '+stamp(n.createdAt);
-  const edited=document.createElement('div');edited.className='date-edited';
-  edited.textContent=sameMinute(n.createdAt,n.updatedAt)?'':'Edited '+stamp(n.updatedAt,!sameDay(n.createdAt,n.updatedAt));
-  dates.append(created,edited);
-  head.append(main,dates);article.append(head);
-  const slot=document.createElement('div');slot.className='inline-slot';slot.id='slot-'+n.id;
-  article.append(slot);root.append(article);
  }
  positionEditor();
 }
@@ -400,18 +507,24 @@ function positionEditor(){
  editor.classList.remove('hidden');
  $('detailEmpty').classList.add('hidden');
 }
-function dismissEditor(){
+function dismissEditor(autoDeleteBlank=true){
+ const previous=editId?notes.get(editId):null;
+ const discard=autoDeleteBlank&&previous&&previous.originDeviceId===device.deviceId&&!previous.content.trim();
  editing=false;editId=null;editingDraft=false;editorWasNew=false;
  $('expandedEditor').classList.add('hidden');
  if(!isDesktop()&&$('expandedEditor').parentElement?.classList.contains('inline-slot')){
   $('newEditorHost').append($('expandedEditor'));
  }
+ if(discard)deleteNote(previous.id,true);
 }
 function closeEditor(){
  if(!editing)return;
- dismissEditor();
+ const n=editId?notes.get(editId):null;
+ const discard=!!n&&n.originDeviceId===device.deviceId&&!n.content.trim();
+ dismissEditor(false);
  navigate(viewHash(),{replace:true,preserveScroll:true});
- flush();
+ if(discard)deleteNote(n.id,true);
+ else flush();
 }
 function openEditor(id=null,focus=true){
  if(editing&&editId===id){
@@ -424,10 +537,12 @@ function openEditor(id=null,focus=true){
  $('noteText').value=n?.content||'';
  $('noteText').classList.toggle('hidden',readOnly);
  $('readOnlyFull').classList.toggle('hidden',!readOnly);
- $('readOnlyFull').textContent=n?.content||'';
+ appendLinkified($('readOnlyFull'),n?.content||'');
+ updateEditorLinks(readOnly?'':n?.content||'');
  $('editorMeta').textContent=n?metaText(n):'New note';
  $('editorType').textContent=readOnly?'Read only':'';
  $('archiveButton').classList.toggle('hidden',!n);
+ $('deleteNoteButton').classList.toggle('hidden',!n);
  $('archiveButton').textContent=n?.archivedAt?'Restore':'Archive';
  $('editorStatus').textContent=readOnly?'':'Autosave';
  renderList(true);
@@ -438,15 +553,7 @@ function openEditor(id=null,focus=true){
 }
 function updateVisibleNote(n){
  const el=[...document.querySelectorAll('.note')].find(x=>x.dataset.id===n.id);
- if(!el)return;
- const first=firstLines(n.content);
- const title=el.querySelector('.note-title'),excerpt=el.querySelector('.note-excerpt');
- if(title)title.textContent=first[0];
- if(excerpt)excerpt.textContent=first[1];
- const mobile=el.querySelector('.mobile-times');if(mobile)mobile.textContent=metaText(n);
- const created=el.querySelector('.date-created');if(created)created.textContent='Created '+stamp(n.createdAt);
- const edited=el.querySelector('.date-edited');
- if(edited)edited.textContent=sameMinute(n.createdAt,n.updatedAt)?'':'Edited '+stamp(n.updatedAt,!sameDay(n.createdAt,n.updatedAt));
+ if(el)updateNoteArticle(el,n);
 }
 function persistNote(note,archive=false){
  const snapshot={...note};
@@ -463,11 +570,12 @@ function persistNote(note,archive=false){
 function onText(){
  if(!device||!editing)return;
  const content=$('noteText').value;
+ updateEditorLinks(content);
  let n=editId?notes.get(editId):null;
  if(n&&n.originDeviceId!==device.deviceId)return;
  const isNew=!n;
  if(isNew){
-  if(!content)return;
+  if(!content.trim())return;
   const now=Date.now();editId=crypto.randomUUID();
   n={id:editId,categoryId:selected,content:'',originDeviceId:device.deviceId,originDeviceName:device.name,createdAt:now,updatedAt:now,archivedAt:null,revision:0};
   editingDraft=false;
@@ -476,6 +584,7 @@ function onText(){
  notes.set(n.id,n);
  persistNote(n);
  $('archiveButton').classList.remove('hidden');
+ $('deleteNoteButton').classList.remove('hidden');
  $('editorMeta').textContent=metaText(n);
  updateVisibleNote(n);
  // Update numbers without recreating the navigation or active editor.
@@ -486,24 +595,60 @@ function onText(){
  }
 }
 function scheduleSync(){clearTimeout(syncTimer);syncTimer=setTimeout(flush,500)}
+function deleteNote(id,automatic=false){
+ const n=notes.get(id);if(!n)return;
+ if(!automatic&&!confirm('Permanently delete this note?'))return;
+ if(editing&&editId===id){
+  dismissEditor(false);
+  history.replaceState(history.state,'',location.pathname+location.search+viewHash());
+ }
+ notes.delete(id);
+ status('Deleting locally…');
+ persistChain=persistChain.catch(()=>{}).then(async()=>{
+  const t=tx(['notes','outbox','archiveOutbox','deleteOutbox'],'readwrite');
+  t.objectStore('notes').delete(id);t.objectStore('outbox').delete(id);
+  t.objectStore('archiveOutbox').delete(id);t.objectStore('deleteOutbox').put({id});
+  await done(t);
+  localSaveError=null;
+  status(navigator.onLine?'Saved locally · Sync pending':'Saved locally · Offline');
+  scheduleSync();
+ }).catch(e=>{localSaveError=e;status('Local delete failed: '+e.message,true)});
+ renderCategories();renderList();
+}
+async function discardDeletedLocal(id){
+ const t=tx(['notes','outbox','archiveOutbox'],'readwrite');
+ t.objectStore('notes').delete(id);t.objectStore('outbox').delete(id);
+ t.objectStore('archiveOutbox').delete(id);await done(t);
+ notes.delete(id);
+ if(editing&&editId===id){
+  dismissEditor();history.replaceState(history.state,'',location.pathname+location.search+viewHash());
+ }
+ renderCategories();renderList();
+}
 async function flush(){
- if(syncing){resendNeeded=true;return}
+ if(syncing){resendNeeded=true;return;}
  if(!device||!navigator.onLine)return;
  syncing=true;
  try{
   await persistChain;
   if(localSaveError)return;
   const out=await getAll('outbox');
+  let changed=false;
   for(const item of out.sort((a,b)=>a.note.updatedAt-b.note.updatedAt)){
-   await api('/note','PUT',item.note);
+   // An empty editor is transient. Closing it queues deletion, not a blank PUT.
+   if(!item.note.content.trim())continue;
+   try{await api('/note','PUT',item.note);}
+   catch(e){if(e.status===410){await discardDeletedLocal(item.id);changed=true;continue;}throw e;}
    const t=tx(['outbox'],'readwrite'),os=t.objectStore('outbox');
    const latest=await req(os.get(item.id));
    if(latest&&latest.revision===item.revision)os.delete(item.id);
-   await done(t);
+   await done(t);changed=true;
   }
   const archived=await getAll('archiveOutbox');
   for(const item of archived){
-   const result=await api('/archive','PATCH',{id:item.id,archived:item.archived});
+   let result;
+   try{result=await api('/archive','PATCH',{id:item.id,archived:item.archived});}
+   catch(e){if(e.status===404){await discardDeletedLocal(item.id);changed=true;continue;}throw e;}
    const t=tx(['archiveOutbox','notes'],'readwrite'),os=t.objectStore('archiveOutbox');
    const latest=await req(os.get(item.id));
    if(latest&&latest.archived===item.archived){
@@ -515,16 +660,22 @@ async function flush(){
      if(notes.has(item.id))notes.set(item.id,local);
     }
    }
-   await done(t);
+   await done(t);changed=true;
   }
-  if(out.length||archived.length)await pull(true);
-  const still=(await getAll('outbox')).length+(await getAll('archiveOutbox')).length;
+  const deletions=await getAll('deleteOutbox');
+  for(const item of deletions){
+   await api('/note','DELETE',{id:item.id});
+   const t=tx(['deleteOutbox'],'readwrite');t.objectStore('deleteOutbox').delete(item.id);await done(t);changed=true;
+  }
+  if(changed)await pull(true);
+  const still=(await getAll('outbox')).length+(await getAll('archiveOutbox')).length+(await getAll('deleteOutbox')).length;
   status(still?'Saved locally · Sync pending':'Synced');
  }catch(e){const m=e.status?'Sync '+e.status+': '+e.message:'Sync error: '+e.message;status(m,true);}
- finally{syncing=false;if(resendNeeded){resendNeeded=false;clearTimeout(syncTimer);syncTimer=setTimeout(flush,350)}}
+ finally{syncing=false;if(resendNeeded){resendNeeded=false;clearTimeout(syncTimer);syncTimer=setTimeout(flush,350);}}
 }
 async function pull(force=false){
- if(pulling||!device||!navigator.onLine)return;
+ if(pulling){repullNeeded=true;return;}
+ if(!device||!navigator.onLine)return;
  pulling=true;
  try{
   const data=await api('/state?version='+(force?0:remoteVersion));
@@ -532,10 +683,21 @@ async function pull(force=false){
   await persistChain;
   const contentPending=new Set((await getAll('outbox')).map(x=>x.id));
   const archivePending=new Map((await getAll('archiveOutbox')).map(x=>[x.id,x.archived]));
+  const deletePending=new Set((await getAll('deleteOutbox')).map(x=>x.id));
+  const deleted=new Set(data.deletedIds||[]);
+  const remoteIds=new Set((data.notes||[]).map(n=>n.id));
   categories=data.categories||categories;
   await saveSetting('categories',categories);
-  const t=tx(['notes'],'readwrite');
+  const t=tx(['notes','outbox','archiveOutbox'],'readwrite');
+  for(const id of [...notes.keys()]){
+   if(deletePending.has(id))continue;
+   if(deleted.has(id)||!remoteIds.has(id)&&!contentPending.has(id)){
+    notes.delete(id);t.objectStore('notes').delete(id);
+    if(deleted.has(id)){t.objectStore('outbox').delete(id);t.objectStore('archiveOutbox').delete(id);}
+   }
+  }
   for(const remote of data.notes||[]){
+   if(deletePending.has(remote.id)||deleted.has(remote.id))continue;
    const local=notes.get(remote.id);
    let n=remote;
    if(local&&contentPending.has(remote.id))n={...remote,...local,archivedAt:remote.archivedAt};
@@ -544,16 +706,29 @@ async function pull(force=false){
    notes.set(n.id,n);t.objectStore('notes').put(n);
   }
   await done(t);remoteVersion=data.version;
+  // Clean up historical blank notes without ever leaving an (Untitled) card.
+  for(const n of [...notes.values()])if(!n.content.trim()&&!(editing&&editId===n.id))deleteNote(n.id,true);
+  if(editing&&editId&&!notes.has(editId)){
+   dismissEditor();history.replaceState(history.state,'',location.pathname+location.search+viewHash());
+  }
   renderCategories();
   if(editing&&editId&&!contentPending.has(editId)){
    const n=notes.get(editId);
-   if(n){if(n.originDeviceId!==device.deviceId){$('readOnlyFull').textContent=n.content;$('editorMeta').textContent=metaText(n)}$('archiveButton').textContent=n.archivedAt?'Restore':'Archive'}
+   if(n){
+    if(n.originDeviceId!==device.deviceId){
+     appendLinkified($('readOnlyFull'),n.content);$('editorMeta').textContent=metaText(n);
+    }
+    $('archiveButton').textContent=n.archivedAt?'Restore':'Archive';
+   }
   }
   renderList();
   const route=parseRoute();
   if(route.kind==='note'&&(!editing||editId!==route.id)&&notes.has(route.id))applyRoute(false);
  }catch(e){status(e.status?'Refresh '+e.status+': '+e.message:'Offline',!!e.status)}
- finally{pulling=false}
+ finally{
+  pulling=false;
+  if(repullNeeded){repullNeeded=false;setTimeout(()=>pull(true),0);}
+ }
 }
 async function archiveNote(id){
  const n=notes.get(id);if(!n)return;
@@ -624,6 +799,8 @@ async function boot(){
  const savedCategories=await setting('categories');if(savedCategories?.length)categories=savedCategories;
  notes=new Map((await getAll('notes')).map(n=>[n.id,n]));
  ready=true;
+ // A previously interrupted empty edit must not become an untitled note.
+ for(const n of [...notes.values()])if(!n.content.trim())deleteNote(n.id,true);
  if(!location.hash)history.replaceState({scroll:null},'',location.pathname+location.search+(isQuickApp?'#/new':viewHash('inbox',false)));
  applyRoute(parseRoute().kind==='new');
  status('Local ready');
@@ -643,6 +820,7 @@ $('quickAdd').onclick=()=>navigate(newHash(selected),{focus:true,preserveScroll:
 $('desktopNew').onclick=()=>navigate(newHash(selected),{focus:true,preserveScroll:true});
 $('noteText').addEventListener('input',onText);
 $('archiveButton').onclick=()=>{if(editId)archiveNote(editId)};
+$('deleteNoteButton').onclick=()=>{if(editId)deleteNote(editId)};
 $('archiveButton').title='Archive / restore (Alt+A)';
 $('doneButton').onclick=closeEditor;
 $('renameCategory').onclick=()=>renameCategory();
