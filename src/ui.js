@@ -704,6 +704,8 @@ async function pull(force=false){
    notes.set(n.id,n);t.objectStore('notes').put(n);
   }
   await done(t);remoteVersion=data.version;
+  // Clean up historical blank notes without ever leaving an (Untitled) card.
+  for(const n of [...notes.values()])if(!n.content.trim()&&!(editing&&editId===n.id))deleteNote(n.id,true);
   if(editing&&editId&&!notes.has(editId)){
    dismissEditor();history.replaceState(history.state,'',location.pathname+location.search+viewHash());
   }
@@ -796,7 +798,7 @@ async function boot(){
  notes=new Map((await getAll('notes')).map(n=>[n.id,n]));
  ready=true;
  // A previously interrupted empty edit must not become an untitled note.
- for(const n of [...notes.values()])if(!n.content.trim()&&n.originDeviceId===device.deviceId)deleteNote(n.id,true);
+ for(const n of [...notes.values()])if(!n.content.trim())deleteNote(n.id,true);
  if(!location.hash)history.replaceState({scroll:null},'',location.pathname+location.search+(isQuickApp?'#/new':viewHash('inbox',false)));
  applyRoute(parseRoute().kind==='new');
  status('Local ready');
