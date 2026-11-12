@@ -126,8 +126,8 @@ export const HTML = String.raw`<!doctype html>
 .note-tools .icon-btn{width:25px}
 .note-tools .delete-note{color:var(--danger)}
 .device-name{font-size:11px;color:var(--primary);text-align:right;overflow-wrap:anywhere;max-width:100%}
-.note-dates{display:flex;flex-direction:column;gap:1px;min-width:0;line-height:1.4;margin-top:2px}
-.date-row{display:grid;grid-template-columns:max-content 43px;gap:6px;align-items:baseline}
+.note-dates{display:grid;grid-template-columns:max-content 43px;column-gap:6px;row-gap:1px;align-items:baseline;min-width:0;line-height:1.4;margin-top:2px}
+.date-row{display:contents}
 .date-value{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
 .date-label{text-align:left;white-space:nowrap}
 .note-meta{margin-top:3px}
@@ -138,9 +138,9 @@ export const HTML = String.raw`<!doctype html>
 #editorMeta{white-space:pre-line}
 @media(max-width:960px){
  .note-head{display:grid;grid-template-columns:minmax(0,1fr) max-content;gap:5px}
- .note-dates{display:flex;font-size:9.5px}
+ .note-dates{display:grid;grid-template-columns:max-content 40px;font-size:9.5px}
  .note-tools .icon-btn{width:23px}
- .date-row{grid-template-columns:max-content 40px;gap:4px}
+ .note-dates{column-gap:4px}
  .note-meta .mobile-times{display:none}
 }
 </style>
@@ -352,7 +352,6 @@ function dateTokens(ts){
  return [stamp(ts),y+'/'+m+'/'+day,y+'/'+mm+'/'+dd,y+'-'+mm+'-'+dd,m+'/'+day,mm+'/'+dd,m+'/'+dd,mm+'/'+day,m+'-'+day,m+'.'+day,y+'年'+m+'月'+day+'日',w,d.getHours()+':'+d.getMinutes()].join(' ').toLowerCase();
 }
 function searchMatches(n,q){if(!q)return true;return (n.content+' '+n.originDeviceName+' '+dateTokens(n.createdAt)+' '+dateTokens(n.updatedAt)).toLowerCase().includes(q)}
-function firstLines(value){const a=String(value||'').replace(/\r/g,'').split('\n');return [a[0]||'(Untitled)',a[1]||'']}
 function counts(){
  const q=$('searchInput').value.trim().toLowerCase();
  const filtered=[...notes.values()].filter(n=>searchMatches(n,q)&&(q||n.categoryId===selected));
@@ -506,18 +505,21 @@ function positionEditor(){
  editor.classList.remove('hidden');
  $('detailEmpty').classList.add('hidden');
 }
-function dismissEditor(){
+function dismissEditor(autoDeleteBlank=true){
+ const previous=editId?notes.get(editId):null;
+ const discard=autoDeleteBlank&&previous&&previous.originDeviceId===device.deviceId&&!previous.content.trim();
  editing=false;editId=null;editingDraft=false;editorWasNew=false;
  $('expandedEditor').classList.add('hidden');
  if(!isDesktop()&&$('expandedEditor').parentElement?.classList.contains('inline-slot')){
   $('newEditorHost').append($('expandedEditor'));
  }
+ if(discard)deleteNote(previous.id,true);
 }
 function closeEditor(){
  if(!editing)return;
  const n=editId?notes.get(editId):null;
  const discard=!!n&&n.originDeviceId===device.deviceId&&!n.content.trim();
- dismissEditor();
+ dismissEditor(false);
  navigate(viewHash(),{replace:true,preserveScroll:true});
  if(discard)deleteNote(n.id,true);
  else flush();
@@ -595,7 +597,7 @@ function deleteNote(id,automatic=false){
  const n=notes.get(id);if(!n)return;
  if(!automatic&&!confirm('Permanently delete this note?'))return;
  if(editing&&editId===id){
-  dismissEditor();
+  dismissEditor(false);
   history.replaceState(history.state,'',location.pathname+location.search+viewHash());
  }
  notes.delete(id);
