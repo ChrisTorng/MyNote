@@ -16,10 +16,10 @@ export const HTML = String.raw`<!doctype html>
 *{box-sizing:border-box}html{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:14px}body{margin:0;background:var(--bg);color:var(--ink)}button,input,textarea{font:inherit;color:inherit}button{cursor:pointer}button:disabled{opacity:.45;cursor:default}.hidden{display:none!important}
 .app-wrap{max-width:1800px;margin:auto;padding:0 12px}
 .app-actions{position:relative}
-.app-menu{position:absolute;top:34px;right:0;z-index:50;width:min(270px,85vw);background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:10px;box-shadow:0 8px 22px #0002}
+.app-menu{position:fixed;top:calc(50px + env(safe-area-inset-top,0px));right:max(8px,env(safe-area-inset-right,0px));left:auto;z-index:100;width:min(300px,calc(100vw - 16px));max-height:calc(100dvh - 65px);overflow-y:auto;overflow-x:hidden;background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:10px;box-shadow:0 8px 22px #0002}
 .app-menu .btn,.app-menu a{display:block;width:100%;text-align:left;padding:9px 10px;text-decoration:none}
 .app-menu p{font-size:11px;color:var(--muted);line-height:1.5;margin:6px 2px 0}
-.app-menu a{color:var(--ink)}.top{height:46px;display:flex;gap:9px;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}
+.app-menu a{color:var(--ink)}.app-menu .btn{white-space:normal;overflow-wrap:anywhere}.top{height:46px;display:flex;gap:9px;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}
 .brand{font-size:17px;font-weight:750;letter-spacing:-.3px}.top-right,.top-left{display:flex;align-items:center;gap:10px}.top-right{gap:6px}.status{font-size:11px;color:var(--muted)}.status.error{color:var(--danger)}
 .btn,.chip,.tab,.icon-btn{border:1px solid var(--line);border-radius:8px;background:var(--paper);padding:5px 9px;line-height:1.3}.btn:hover,.chip:hover,.tab:hover,.icon-btn:hover{border-color:var(--primary)}.btn.primary,.chip.selected,.tab.active{background:var(--tint);border-color:var(--primary);color:var(--primary)}
 .btn.danger{color:var(--danger)}.btn.flat,.icon-btn.flat{background:transparent;border-color:transparent}.icon-btn{width:27px;height:26px;display:grid;place-items:center;padding:0;font-size:16px}.btn:focus-visible,.chip:focus-visible,.note-head:focus-visible,.icon-btn:focus-visible{outline:2px solid var(--primary)}
@@ -143,6 +143,23 @@ export const HTML = String.raw`<!doctype html>
  .note-dates{column-gap:4px}
  .note-meta .mobile-times{display:none}
 }
+
+/* Mobile card dates flow BELOW content, rather than occupying a desktop side column. */
+@media(max-width:960px){
+ .app-menu .btn,.app-menu a{font-size:13px!important;padding:10px 12px!important;line-height:1.45}
+ .note-head{display:block;position:relative}
+ .note-main{padding-right:82px;min-height:50px}
+ .note-side{display:contents}
+ .note-tools{position:absolute;top:6px;right:6px;display:flex;gap:0}
+ .note-tools .icon-btn{width:25px}
+ .device-name{position:absolute;top:36px;right:10px;max-width:75px;text-align:right}
+ .note-dates{display:grid;grid-template-columns:max-content max-content;justify-content:end;width:100%;min-width:0;margin-top:5px;column-gap:7px;row-gap:1px;font-size:10.5px}
+}
+.editor-top .editor-tools{display:flex;align-items:center;gap:5px;flex-shrink:0}
+.editor-top #copyNoteButton{width:30px;height:30px;color:var(--primary)}
+.editor-top #copyNoteButton svg,.note-tools .copy-note svg{display:block}
+.editor textarea.read-only-full{display:block;width:100%;min-height:180px;max-height:60dvh;overflow-y:auto;resize:vertical;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;-webkit-user-select:text;cursor:text}
+@media(max-width:960px){.editor textarea.read-only-full{min-height:160px;font-size:16px}}
 </style>
 </head>
 <body>
@@ -179,10 +196,10 @@ export const HTML = String.raw`<!doctype html>
 <aside id="detail" class="detail"><div class="detail-bar"><button id="desktopNew" class="btn primary" title="New note (Alt+N)">+ New note</button></div><div id="desktopEditorHost" class="desktop-editor-host"></div><div id="detailEmpty" class="detail-empty"></div></aside>
 </main>
 <div id="expandedEditor" class="editor hidden">
-<div class="editor-top"><span id="editorMeta"></span><span id="editorType"></span></div>
+<div class="editor-top"><span id="editorMeta"></span><div class="editor-tools"><span id="editorType"></span><button id="copyNoteButton" class="icon-btn flat hidden" type="button" title="Copy entire note" aria-label="Copy entire note"><svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V5a2 2 0 0 1 2-2h11"/></svg></button></div></div>
 <textarea id="noteText" placeholder="Type here…"></textarea>
-<div id="readOnlyFull" class="read-only-full hidden"></div><div id="editorLinks" class="editor-links hidden"></div>
-<div class="editor-actions"><span id="editorStatus" class="editor-status"></span><button id="deleteNoteButton" class="btn danger hidden">Delete</button><button id="archiveButton" class="btn hidden">Archive</button><button id="doneButton" class="btn primary" title="Close (Esc / Ctrl+Enter)">Close</button></div>
+<textarea id="readOnlyFull" class="read-only-full hidden" readonly spellcheck="false" aria-label="Read-only note text"></textarea><div id="editorLinks" class="editor-links hidden"></div>
+<div class="editor-actions"><span id="editorStatus" class="editor-status"></span><button id="deleteNoteButton" class="icon-btn flat danger hidden" type="button" title="Delete note" aria-label="Delete note">×</button><button id="archiveButton" class="icon-btn flat hidden" type="button" title="Archive note" aria-label="Archive note">▣</button><button id="doneButton" class="btn primary" title="Close (Esc / Ctrl+Enter)">Close</button></div>
 </div>
 </div>
 <script nonce="__NONCE__">
@@ -192,7 +209,7 @@ const $=id=>document.getElementById(id);
 const isDesktop=()=>window.matchMedia('(min-width:961px)').matches;
 const dayMs=86400000;
 let db=null,device=null,categories=[{id:'inbox',name:'Inbox'}],notes=new Map(),remoteVersion=0,selected='inbox',archivedView=false,editId=null,editing=false,editingDraft=false,persistChain=Promise.resolve(),syncing=false,pulling=false,socket=null,reconnectTimer,searchOpen=false,ready=false;
-let syncTimer, resendNeeded=false, repullNeeded=false, localSaveError=null, editorWasNew=false, installPrompt=null;
+let syncTimer, resendNeeded=false, repullNeeded=false, localSaveError=null, editorWasNew=false, editSessionTime=0, installPrompt=null;
 const isQuickApp=location.pathname==='/quick-add';
 const WEEK=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 function status(message,error=false){$('saveStatus').textContent=message;$('saveStatus').title=message;$('saveStatus').classList.toggle('error',error);$('editorStatus').textContent=editing&&editId&&notes.get(editId)?.originDeviceId===device?.deviceId?message:'';}
@@ -275,7 +292,7 @@ function pickCategory(id){
  if(editing&&editorWasNew&&editId){
   const n=notes.get(editId);
   if(n&&n.originDeviceId===device.deviceId){
-   const changed={...n,categoryId:id,updatedAt:Date.now(),revision:n.revision+1};
+   const changed={...n,categoryId:id,updatedAt:editorWasNew?n.createdAt:(editSessionTime||(editSessionTime=Date.now())),revision:n.revision+1};
    notes.set(editId,changed);persistNote(changed);
   }
   selected=id;renderCategories();renderList();return;
@@ -305,14 +322,14 @@ function stamp(ts,withDate=true){
 }
 function metaText(n){
  let s=stamp(n.createdAt)+' Created';
- if(!sameMinute(n.createdAt,n.updatedAt))s+='\n'+stamp(n.updatedAt)+' Edited';
+ if(!sameMinute(n.createdAt,n.updatedAt))s+='\n'+stamp(n.updatedAt,!sameDay(n.createdAt,n.updatedAt))+' Edited';
  return s;
 }
-function setDateRow(row,ts,label){
+function setDateRow(row,ts,label,withDate=true){
  row.replaceChildren();
  if(!ts){row.classList.add('hidden');return;}
  row.classList.remove('hidden');
- const date=document.createElement('span');date.className='date-value';date.textContent=stamp(ts);
+ const date=document.createElement('span');date.className='date-value';date.textContent=stamp(ts,withDate);
  const name=document.createElement('span');name.className='date-label';name.textContent=label;
  row.append(date,name);
 }
@@ -408,7 +425,7 @@ function updateNoteArticle(article,n){
  archive.title=n.archivedAt?'Restore':'Archive';
  archive.setAttribute('aria-label',n.archivedAt?'Restore note':'Archive note');
  setDateRow(article.querySelector('.date-created'),n.createdAt,'Created');
- setDateRow(article.querySelector('.date-edited'),sameMinute(n.createdAt,n.updatedAt)?null:n.updatedAt,'Edited');
+ setDateRow(article.querySelector('.date-edited'),sameMinute(n.createdAt,n.updatedAt)?null:n.updatedAt,'Edited',!sameDay(n.createdAt,n.updatedAt));
  const metadata=article.querySelector('.note-meta');metadata.replaceChildren();
  if(n.originDeviceId!==device.deviceId){
   const ro=document.createElement('span');ro.className='read-only';ro.textContent='Read only';metadata.append(ro);
@@ -416,6 +433,22 @@ function updateNoteArticle(article,n){
  if($('searchInput').value.trim()){
   const cat=categories.find(x=>x.id===n.categoryId);
   if(cat){const name=document.createElement('span');name.textContent=cat.name;metadata.append(name);}
+ }
+}
+
+async function copyNoteText(id){
+ const n=notes.get(id);if(!n)return;
+ try{
+  if(!navigator.clipboard?.writeText)throw Error('Clipboard API unavailable');
+  await navigator.clipboard.writeText(n.content);
+  status('Note copied');
+ }catch{
+  const temp=document.createElement('textarea');
+  temp.value=n.content;temp.setAttribute('readonly','');
+  temp.style.cssText='position:fixed;left:-10000px;top:0;opacity:0';
+  document.body.append(temp);temp.focus();temp.select();
+  let ok=false;try{ok=document.execCommand('copy')}catch{}
+  temp.remove();status(ok?'Note copied':'Copy unavailable; select text in the read-only box',!ok);
  }
 }
 function makeNoteArticle(n){
@@ -435,10 +468,14 @@ function makeNoteArticle(n){
  const tools=document.createElement('div');tools.className='note-tools';
  const archive=document.createElement('button');archive.className='icon-btn flat archive-note';archive.type='button';
  archive.onclick=e=>{e.stopPropagation();archiveNote(n.id)};
+ const copy=document.createElement('button');copy.className='icon-btn flat copy-note';copy.type='button';
+ copy.title='Copy entire note';copy.setAttribute('aria-label','Copy entire note');
+ copy.innerHTML="<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"17\" height=\"17\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"8\" y=\"8\" width=\"12\" height=\"12\" rx=\"2\"/><path d=\"M4 16V5a2 2 0 0 1 2-2h11\"/></svg>";
+ copy.onclick=e=>{e.stopPropagation();copyNoteText(n.id)};
  const del=document.createElement('button');del.className='icon-btn flat delete-note';del.type='button';
  del.textContent='×';del.title='Delete note';del.setAttribute('aria-label','Delete note');
  del.onclick=e=>{e.stopPropagation();deleteNote(n.id)};
- tools.append(archive,del);
+ tools.append(copy,archive,del);
  const origin=document.createElement('div');origin.className='device-name';
  const dates=document.createElement('div');dates.className='note-dates';
  const created=document.createElement('div');created.className='date-row date-created';
@@ -510,7 +547,7 @@ function positionEditor(){
 function dismissEditor(autoDeleteBlank=true){
  const previous=editId?notes.get(editId):null;
  const discard=autoDeleteBlank&&previous&&previous.originDeviceId===device.deviceId&&!previous.content.trim();
- editing=false;editId=null;editingDraft=false;editorWasNew=false;
+ editing=false;editId=null;editingDraft=false;editorWasNew=false;editSessionTime=0;
  $('expandedEditor').classList.add('hidden');
  if(!isDesktop()&&$('expandedEditor').parentElement?.classList.contains('inline-slot')){
   $('newEditorHost').append($('expandedEditor'));
@@ -531,19 +568,22 @@ function openEditor(id=null,focus=true){
   if(focus&&!$('noteText').classList.contains('hidden'))$('noteText').focus({preventScroll:true});
   return;
  }
- editing=true;editId=id;editingDraft=!id;editorWasNew=!id;
+ editing=true;editId=id;editingDraft=!id;editorWasNew=!id;editSessionTime=0;
  const n=id?notes.get(id):null;
  const readOnly=!!n&&n.originDeviceId!==device.deviceId;
  $('noteText').value=n?.content||'';
  $('noteText').classList.toggle('hidden',readOnly);
  $('readOnlyFull').classList.toggle('hidden',!readOnly);
- appendLinkified($('readOnlyFull'),n?.content||'');
- updateEditorLinks(readOnly?'':n?.content||'');
+ $('readOnlyFull').value=n?.content||'';
+ updateEditorLinks(n?.content||'');
  $('editorMeta').textContent=n?metaText(n):'New note';
  $('editorType').textContent=readOnly?'Read only':'';
+ $('copyNoteButton').classList.toggle('hidden',!n);
  $('archiveButton').classList.toggle('hidden',!n);
  $('deleteNoteButton').classList.toggle('hidden',!n);
- $('archiveButton').textContent=n?.archivedAt?'Restore':'Archive';
+ $('archiveButton').textContent=n?.archivedAt?'↶':'▣';
+ $('archiveButton').title=n?.archivedAt?'Restore note':'Archive note';
+ $('archiveButton').setAttribute('aria-label',n?.archivedAt?'Restore note':'Archive note');
  $('editorStatus').textContent=readOnly?'':'Autosave';
  renderList(true);
  if(!readOnly&&focus){
@@ -580,7 +620,11 @@ function onText(){
   n={id:editId,categoryId:selected,content:'',originDeviceId:device.deviceId,originDeviceName:device.name,createdAt:now,updatedAt:now,archivedAt:null,revision:0};
   editingDraft=false;
  }
- n={...n,content,updatedAt:Date.now(),revision:n.revision+1};
+ if(n.content===content)return;
+ // Every keystroke still syncs. The user-facing timestamp changes once per edit session.
+ // A newly created note retains its original Created timestamp until closed.
+ const updatedAt=editorWasNew?n.createdAt:(editSessionTime||(editSessionTime=Date.now()));
+ n={...n,content,updatedAt,revision:n.revision+1};
  notes.set(n.id,n);
  persistNote(n);
  $('archiveButton').classList.remove('hidden');
@@ -716,9 +760,11 @@ async function pull(force=false){
    const n=notes.get(editId);
    if(n){
     if(n.originDeviceId!==device.deviceId){
-     appendLinkified($('readOnlyFull'),n.content);$('editorMeta').textContent=metaText(n);
+     $('readOnlyFull').value=n.content;updateEditorLinks(n.content);$('editorMeta').textContent=metaText(n);
     }
-    $('archiveButton').textContent=n.archivedAt?'Restore':'Archive';
+    $('archiveButton').textContent=n.archivedAt?'↶':'▣';
+    $('archiveButton').title=n.archivedAt?'Restore note':'Archive note';
+    $('archiveButton').setAttribute('aria-label',n.archivedAt?'Restore note':'Archive note');
    }
   }
   renderList();
@@ -821,6 +867,7 @@ $('desktopNew').onclick=()=>navigate(newHash(selected),{focus:true,preserveScrol
 $('noteText').addEventListener('input',onText);
 $('archiveButton').onclick=()=>{if(editId)archiveNote(editId)};
 $('deleteNoteButton').onclick=()=>{if(editId)deleteNote(editId)};
+$('copyNoteButton').onclick=()=>{if(editId)copyNoteText(editId)};
 $('archiveButton').title='Archive / restore (Alt+A)';
 $('doneButton').onclick=closeEditor;
 $('renameCategory').onclick=()=>renameCategory();
