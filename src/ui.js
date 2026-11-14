@@ -130,7 +130,7 @@ export const HTML = String.raw`<!doctype html>
 .date-row{display:contents}
 .date-value{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
 .date-label{text-align:left;white-space:nowrap}
-.date-label-short{display:none}
+.date-label-short{display:none}.date-value-mobile{display:none}.read-only-icon{display:none}
 .note-meta{margin-top:3px}
 .note a,.editor a{color:var(--primary);text-decoration:underline;text-underline-offset:2px;overflow-wrap:anywhere}
 .read-only-full{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;line-height:1.5;max-height:none;margin:4px 0 10px}
@@ -155,18 +155,28 @@ export const HTML = String.raw`<!doctype html>
  .app-menu .btn,.app-menu a{font-size:13px!important;padding:10px 12px!important;line-height:1.45}
  .note-head{display:flex;flex-direction:column;align-items:stretch;gap:0;position:static}
  .note-main{padding-right:0;min-height:0;width:100%}
- .note-footer{display:flex;align-items:center;flex-wrap:wrap;gap:3px 5px;width:100%;min-width:0;margin-top:4px}
- .note-footer>.note-meta{display:flex;align-items:center;order:1;flex:1 1 auto;min-width:0;gap:2px 4px;margin:0;line-height:1.3}
+ .note-footer{display:flex;align-items:center;flex-wrap:nowrap;gap:4px;width:100%;min-width:0;margin-top:4px}
+ .note-footer>.note-meta{display:flex;align-items:center;order:2;flex:0 0 auto;min-width:0;gap:2px;margin:0;line-height:1.3}
  .note-footer>.note-side{display:contents}
- .note-footer .device-name{position:static;order:0;max-width:55px;min-width:0;flex-shrink:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;font-size:10.5px}
- .note-footer .note-dates{order:2;display:flex;flex-direction:row;align-items:baseline;gap:8px;width:auto;min-width:0;max-width:100%;flex-shrink:0;margin:0;font-size:10.5px;line-height:1.35}
- .note-footer .note-dates .date-row{display:inline-flex;align-items:baseline;gap:3px;white-space:nowrap}
- .note-footer .note-dates .date-value{text-align:left}
+ .note-footer .device-name{position:static;order:0;flex:1 1 auto;max-width:none;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;font-size:10.5px}
+ .note-footer .note-dates{order:1;display:flex;flex-direction:row;align-items:baseline;gap:5px;width:auto;min-width:0;max-width:100%;flex:0 0 auto;margin:0;font-size:10.5px;line-height:1.35;white-space:nowrap}
+ .note-footer .note-dates .date-row{display:inline-flex;align-items:baseline;gap:2px;white-space:nowrap}
+ .note-footer .note-dates .date-value{display:none}
+ .note-footer .note-dates .date-value-mobile{display:inline;font-variant-numeric:tabular-nums}
  .note-footer .note-dates.has-edited .date-label-full{display:none}
  .note-footer .note-dates.has-edited .date-label-short{display:inline}
- .note-footer .note-tools{order:3;position:static;display:flex;gap:5px;flex-shrink:0;margin-left:auto;align-self:center}
- .note-footer .note-tools .icon-btn{width:32px;height:32px;flex:0 0 32px;display:grid;place-items:center;padding:0}
+ .note-footer .note-meta .read-only-label,.note-footer .note-meta .note-category{display:none}
+ .note-footer .note-meta .read-only-icon{display:inline-flex;align-items:center;justify-content:center;width:14px;height:18px}
+ .note-footer .note-meta .read-only-icon svg{width:13px;height:13px}
+ .note-footer .note-tools{order:3;position:static;display:flex;gap:4px;flex:0 0 auto;margin-left:auto;align-self:center}
+ .note-footer .note-tools .icon-btn{width:30px;height:32px;flex:0 0 30px;display:grid;place-items:center;padding:0}
  .note-footer .note-tools svg{width:19px;height:19px;display:block}
+}
+@media(max-width:380px){
+ .note-footer{gap:2px}
+ .note-footer .note-dates{gap:3px;font-size:10px}
+ .note-footer .note-tools{gap:2px}
+ .note-footer .note-tools .icon-btn{width:28px;flex-basis:28px}
 }
 .editor-top .editor-tools{display:flex;align-items:center;gap:5px;flex-shrink:0}
 .editor-top #copyNoteButton{width:30px;height:30px;color:var(--primary)}
@@ -326,12 +336,12 @@ async function saveSetting(key,value){const t=tx(['settings'],'readwrite');t.obj
 async function api(path,method='GET',body){const r=await fetch('/api'+path,{method,credentials:'same-origin',headers:body?{'content-type':'application/json'}:{},body:body?JSON.stringify(body):undefined,cache:'no-store'});let j={};try{j=await r.json()}catch{};if(!r.ok){const e=Error(j.error||'Request failed');e.status=r.status;throw e}return j}
 function sameDay(a,b){return new Date(a).toDateString()===new Date(b).toDateString()}
 function sameMinute(a,b){return Math.floor(a/60000)===Math.floor(b/60000)}
-function stamp(ts,withDate=true){
+function stamp(ts,withDate=true,numericWeekday=false){
  if(!ts)return '';
  const d=new Date(ts),time=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
  if(!withDate)return time;
  const year=d.getFullYear()!==new Date().getFullYear()?d.getFullYear()+'/':'';
- return year+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0')+' ('+WEEK[d.getDay()]+') '+time;
+ return year+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0')+(numericWeekday?' '+d.getDay():' ('+WEEK[d.getDay()]+')')+' '+time;
 }
 function metaText(n){
  let s=stamp(n.createdAt)+' Created';
@@ -343,10 +353,11 @@ function setDateRow(row,ts,label,withDate=true){
  if(!ts){row.classList.add('hidden');return;}
  row.classList.remove('hidden');
  const date=document.createElement('span');date.className='date-value';date.textContent=stamp(ts,withDate);
+ const mobileDate=document.createElement('span');mobileDate.className='date-value-mobile';mobileDate.textContent=stamp(ts,withDate,true);
  const name=document.createElement('span');name.className='date-label';
  const full=document.createElement('span');full.className='date-label-full';full.textContent=label;
  const short=document.createElement('span');short.className='date-label-short';short.textContent=label==='Created'?'C':'E';short.setAttribute('aria-hidden','true');
- name.append(full,short);row.append(date,name);
+ name.append(full,short);row.append(date,mobileDate,name);
 }
 function appendLinkified(element,text){
  element.replaceChildren();
@@ -445,11 +456,15 @@ function updateNoteArticle(article,n){
  setDateRow(article.querySelector('.date-edited'),hasEdited?n.updatedAt:null,'Edited',!sameDay(n.createdAt,n.updatedAt));
  const metadata=article.querySelector('.note-meta');metadata.replaceChildren();
  if(n.originDeviceId!==device.deviceId){
-  const ro=document.createElement('span');ro.className='read-only';ro.textContent='Read only';metadata.append(ro);
+  const ro=document.createElement('span');ro.className='read-only';ro.title='Read only';ro.setAttribute('aria-label','Read only');
+  const roLabel=document.createElement('span');roLabel.className='read-only-label';roLabel.textContent='Read only';
+  const roIcon=document.createElement('span');roIcon.className='read-only-icon';roIcon.setAttribute('aria-hidden','true');
+  roIcon.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>';
+  ro.append(roLabel,roIcon);metadata.append(ro);
  }
  if($('searchInput').value.trim()){
   const cat=categories.find(x=>x.id===n.categoryId);
-  if(cat){const name=document.createElement('span');name.textContent=cat.name;metadata.append(name);}
+  if(cat){const name=document.createElement('span');name.className='note-category';name.textContent=cat.name;metadata.append(name);}
  }
 }
 
