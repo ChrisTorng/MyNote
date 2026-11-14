@@ -144,16 +144,23 @@ export const HTML = String.raw`<!doctype html>
  .note-meta .mobile-times{display:none}
 }
 
-/* Mobile card dates flow BELOW content, rather than occupying a desktop side column. */
+/* Desktop keeps the preview and metadata on the left, actions and dates on the right. */
+.note-footer{display:contents}
+.note-head>.note-main{grid-column:1;grid-row:1}
+.note-head>.note-footer>.note-meta{grid-column:1;grid-row:2;margin-top:3px}
+.note-head>.note-footer>.note-side{grid-column:2;grid-row:1/span 2}
+/* Mobile cards: title and excerpt use full width; everything else is in the bottom area. */
 @media(max-width:960px){
  .app-menu .btn,.app-menu a{font-size:13px!important;padding:10px 12px!important;line-height:1.45}
- .note-head{display:block;position:relative}
- .note-main{padding-right:82px;min-height:50px}
- .note-side{display:contents}
- .note-tools{position:absolute;top:6px;right:6px;display:flex;gap:0}
- .note-tools .icon-btn{width:25px}
- .device-name{position:absolute;top:36px;right:10px;max-width:75px;text-align:right}
- .note-dates{display:grid;grid-template-columns:max-content max-content;justify-content:end;width:100%;min-width:0;margin-top:5px;column-gap:7px;row-gap:1px;font-size:10.5px}
+ .note-head{display:flex;flex-direction:column;align-items:stretch;gap:0;position:static}
+ .note-main{padding-right:0;min-height:0;width:100%}
+ .note-footer{display:flex;align-items:center;flex-wrap:wrap;gap:3px 5px;width:100%;min-width:0;margin-top:4px}
+ .note-footer>.note-meta{display:flex;align-items:center;order:1;flex:1 1 auto;min-width:0;gap:2px 4px;margin:0;line-height:1.3}
+ .note-footer>.note-side{display:contents}
+ .note-footer .device-name{position:static;order:0;max-width:55px;min-width:0;flex-shrink:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;font-size:10.5px}
+ .note-footer .note-dates{order:2;display:grid;grid-template-columns:max-content max-content;justify-content:end;width:auto;min-width:0;flex-shrink:0;margin:0;column-gap:4px;row-gap:0;font-size:10px;line-height:1.35}
+ .note-footer .note-tools{order:3;position:static;display:flex;gap:0;flex-shrink:0;margin-left:auto;align-self:center}
+ .note-footer .note-tools .icon-btn{width:24px;height:25px}
 }
 .editor-top .editor-tools{display:flex;align-items:center;gap:5px;flex-shrink:0}
 .editor-top #copyNoteButton{width:30px;height:30px;color:var(--primary)}
@@ -463,7 +470,7 @@ function makeNoteArticle(n){
  const title=document.createElement('div');title.className='note-title';
  const excerpt=document.createElement('div');excerpt.className='note-excerpt';
  const metadata=document.createElement('div');metadata.className='note-meta';
- main.append(title,excerpt,metadata);
+ main.append(title,excerpt);
  const side=document.createElement('div');side.className='note-side';
  const tools=document.createElement('div');tools.className='note-tools';
  const archive=document.createElement('button');archive.className='icon-btn flat archive-note';archive.type='button';
@@ -481,7 +488,8 @@ function makeNoteArticle(n){
  const created=document.createElement('div');created.className='date-row date-created';
  const edited=document.createElement('div');edited.className='date-row date-edited';
  dates.append(created,edited);side.append(tools,origin,dates);
- head.append(main,side);article.append(head);
+ const footer=document.createElement('div');footer.className='note-footer';footer.append(metadata,side);
+ head.append(main,footer);article.append(head);
  const slot=document.createElement('div');slot.className='inline-slot';slot.id='slot-'+n.id;
  article.append(slot);
  updateNoteArticle(article,n);
