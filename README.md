@@ -2,9 +2,9 @@
 
 Fast, private, plain-text notes for Android Edge and desktop browsers.
 
-This repository is an example of a self-hosted, personal notes app. Each user deploys their own Cloudflare Worker and D1 database. No public demo is offered because the maintainer's live instance is private.
+This repository is an example of a self-hosted, personal notes app. Each user deploys their own Cloudflare Worker and SQLite-backed Durable Object. No public demo is offered because the maintainer's live instance is private.
 
-Deployment credentials, access codes and note contents must be stored outside Git. The application URL is intentionally not advertised.
+Deployment credentials, access codes, the `SETUP_CODE_HASH` binding, and note contents must be kept outside Git. The repository contains application code, not a copy of the maintainer's live Durable Object data. The application URL is intentionally not advertised.
 
 ## Features
 
